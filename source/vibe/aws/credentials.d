@@ -56,3 +56,15 @@ class StaticAWSCredentials : AWSCredentialSource
         throw new Exception("Static credentials with ID " ~ creds.accessKeyID ~ " rejected because: " ~ reason);
     }
 }
+
+import std.process : environment;
+class EnvAWSCredentials : StaticAWSCredentials
+{
+    this()
+    {
+        string accessKeyID = environment.get("AWS_ACCESS_KEY_ID", environment.get("AWS_ACCESS_KEY", "")  ) ;
+        string accessKeySecret = environment.get("AWS_SECRET_KEY", environment.get("AWS_SECRET_ACCESS_KEY", "")  ) ;
+        super(accessKeyID, accessKeySecret);
+    }
+
+}
