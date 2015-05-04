@@ -7,6 +7,6 @@
 	"authors": ["rix0rrr"],
     "targetType": "library",
 	"dependencies": {
-		"vibe-d": "~>0.7.19"
+		"vibe-d": "~>0.7.23"
 	}
 }
