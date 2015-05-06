@@ -225,6 +225,11 @@ class AWSResponse
         m_response = response;
         m_body = response.readJson();
     }
+    
+    @override string toString()
+    {
+      return m_body.toString();
+    }
 
     @property Json responseBody() { return m_body; }
 }
