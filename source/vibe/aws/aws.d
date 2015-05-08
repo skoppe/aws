@@ -226,7 +226,7 @@ class AWSResponse
         m_body = response.readJson();
     }
     
-    @override string toString()
+    override string toString()
     {
       return m_body.toString();
     }
