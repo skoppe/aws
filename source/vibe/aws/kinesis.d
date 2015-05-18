@@ -25,8 +25,6 @@ class Kinesis : AWSClient
         j["StreamName"] = this.stream;
         import std.stdio;
 
-        writeln(j);
-        writeln(j.toString());
         auto res = this.doRequest( apiVersion ~ ".PutRecord", j);
         return res.responseBody();
     }
@@ -70,5 +68,4 @@ struct Record
         return j;
     }
 }
-
 
