@@ -229,7 +229,6 @@ class AWSResponse
     ~this()
     {
       m_response.destroy();
-      m_body.destroy();
     }
     
     override string toString()
