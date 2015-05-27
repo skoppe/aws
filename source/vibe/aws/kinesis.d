@@ -42,7 +42,7 @@ class Kinesis : AWSClient
 
 }
 
-struct Record
+class Record
 {
 
     string pk;
