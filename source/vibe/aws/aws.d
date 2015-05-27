@@ -122,11 +122,12 @@ class AWSClient {
         {
             auto credScope = region ~ "/" ~ service;
             auto creds = m_credsSource.credentials(credScope);
+            HTTPClientResponse resp;
             try
             {
                 // FIXME: Auto-retries for retriable errors
                 // FIXME: Report credential errors and retry for failed credentials
-                auto resp = requestHTTP("https://" ~ endpoint ~ "/", (scope req) {
+                 resp = requestHTTP("https://" ~ endpoint ~ "/", (scope req) {
                     auto timeString = currentTimeString();
                     auto jsonString = cast(ubyte[])request.toString();
 
@@ -150,11 +151,13 @@ class AWSClient {
                 logWarn(ex.msg);
                 // Report credentials as invalid. Will retry if possible.
                 m_credsSource.credentialsInvalid(credScope, creds, ex.msg);
+                resp.destroy();
                 if (!backoff.canRetry) throw ex;
             }
             catch (AWSException ex)
             {
                 logWarn(ex.msg);
+                resp.destroy();
                 // Retry if possible and retriable, otherwise give up.
                 if (!backoff.canRetry || !ex.retriable) throw ex;
             }
