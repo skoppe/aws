@@ -226,6 +226,12 @@ class AWSResponse
         m_body = response.readJson();
     }
     
+    ~this()
+    {
+      m_response.destroy();
+      m_body.destroy();
+    }
+    
     override string toString()
     {
       return m_body.toString();
