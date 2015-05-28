@@ -123,7 +123,6 @@ class AWSClient {
             auto credScope = region ~ "/" ~ service;
             auto creds = m_credsSource.credentials(credScope);
             HTTPClientResponse resp;
-            scope(failure) resp.dropBody();
             try
             {
                 // FIXME: Auto-retries for retriable errors
@@ -234,7 +233,6 @@ class AWSResponse
     ~this()
     { 
       m_response.dropBody();
-      m_response.destroy();
     }
     
     override string toString()
