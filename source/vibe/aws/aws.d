@@ -123,6 +123,7 @@ class AWSClient {
             auto credScope = region ~ "/" ~ service;
             auto creds = m_credsSource.credentials(credScope);
             HTTPClientResponse resp;
+            scope(failure) resp.dropBody();
             try
             {
                 // FIXME: Auto-retries for retriable errors
@@ -151,17 +152,18 @@ class AWSClient {
                 logWarn(ex.msg);
                 // Report credentials as invalid. Will retry if possible.
                 m_credsSource.credentialsInvalid(credScope, creds, ex.msg);
+                resp.dropBody();
                 resp.destroy();
                 if (!backoff.canRetry) throw ex;
             }
             catch (AWSException ex)
             {
                 logWarn(ex.msg);
+                resp.dropBody();
                 resp.destroy();
                 // Retry if possible and retriable, otherwise give up.
                 if (!backoff.canRetry || !ex.retriable) throw ex;
-            }
-
+            } 
             // We're going again, but sleep first
             backoff.sleep();
         }
@@ -230,7 +232,8 @@ class AWSResponse
     }
     
     ~this()
-    {
+    { 
+      m_response.dropBody();
       m_response.destroy();
     }
     
