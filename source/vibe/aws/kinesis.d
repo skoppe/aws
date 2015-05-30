@@ -26,7 +26,9 @@ class Kinesis : AWSClient
         import std.stdio;
 
         auto res = this.doRequest( apiVersion ~ ".PutRecord", j);
-        return res.responseBody();
+        Json ret = res.responseBody();
+        res.destroy();
+        return ret;
     }
 
     auto putRecords(Record[] records)
@@ -36,8 +38,9 @@ class Kinesis : AWSClient
         j["Records"] = records.map!(r => r.toJson()).array;
 
         auto res = this.doRequest( apiVersion ~ ".PutRecords", j);
-        return res.responseBody();
-
+        Json ret = res.responseBody();
+        res.destroy();
+        return ret;
     }
 
 }
@@ -68,4 +71,3 @@ class Record
         return j;
     }
 }
-
