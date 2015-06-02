@@ -163,7 +163,14 @@ class AWSClient {
                 // Retry if possible and retriable, otherwise give up.
                 if (!backoff.canRetry || !ex.retriable) throw ex;
             } 
-            // We're going again, but sleep first
+            catch (Throwable t) //ssl errors from ssl.d
+            {
+              if (!backoff.canRetry)
+              {
+                logError("no retries left, failing request");
+                throw(t);
+              }
+            }
             backoff.sleep();
         }
         assert(0);
@@ -221,18 +228,15 @@ private void signRequest(HTTPClientRequest req, ubyte[] requestBody, AWSCredenti
 
 class AWSResponse
 {
-    private HTTPClientResponse m_response;
+  
     private Json m_body;
 
     this(HTTPClientResponse response)
     {
-        m_response = response;
+        //m_response = response;
         m_body = response.readJson();
-    }
-    
-    ~this()
-    { 
-      m_response.dropBody();
+        response.dropBody();
+        response.destroy();
     }
     
     override string toString()
