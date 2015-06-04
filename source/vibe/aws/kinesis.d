@@ -32,8 +32,10 @@ class Kinesis : AWSClient
         return ret;
     }
 
+    import std.range;
+    
     enum string putRecordsName = apiVersion ~ ".PutRecords";
-    auto putRecords(Record[] records)
+    auto putRecords(Range)(Range records)
     {
         auto j =  Json.emptyObject;
         j["StreamName"] = this.stream;
