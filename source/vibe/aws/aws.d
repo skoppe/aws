@@ -15,7 +15,9 @@ import vibe.core.core;
 import vibe.core.log;
 import vibe.data.json;
 import vibe.http.client;
+import vibe.inet.message;
 
+import std.digest.sha;
 import vibe.aws.sigv4;
 
 public import vibe.aws.credentials;
@@ -94,13 +96,14 @@ struct ExponentialBackoff
         vibe.core.core.sleep(uniform!("[]")(1, maxSleepMs).msecs);
     }
 
-    int opApply(scope int delegate(ref int) attempt)
+    int opApply(scope int delegate(uint) attempt)
     {
+        int result = 0;
         for (; !finished; inc())
         {
             try
             {
-                int result = attempt(maxRetries - tries);
+                result = attempt(maxRetries - tries);
                 if (result)
                     return result;
             }
@@ -110,7 +113,7 @@ struct ExponentialBackoff
                 // Retry if possible and retriable, otherwise give up.
                 if (!canRetry || !ex.retriable) throw ex;
             }
-            catch (Throwable t)
+            catch (Throwable t) //ssl errors from ssl.d
             {
                 logWarn(t.msg);
                 if (!canRetry)
@@ -118,6 +121,7 @@ struct ExponentialBackoff
             }
             sleep();
         }
+        return result;
     }
 }
 
@@ -138,6 +142,91 @@ class AWSClient {
         this.service = service;
         this.m_credsSource = credsSource;
         this.m_config = config;
+    }
+
+    AWSResponse doRESTUpload(HTTPMethod method, string resource, in InetHeaderMap headers,
+                             InputStream payload, ulong payloadSize, ulong blockSize = 512*1024
+                            )
+    {
+        enforce(blockSize > 8*1024, "The block size for an upload has to be bigger than 8KB.");
+
+        auto credScope = region ~ "/" ~ service;
+        auto creds = m_credsSource.credentials(credScope);
+
+        auto retries = ExponentialBackoff(m_config.maxErrorRetry);
+        foreach(triesLeft; retries)
+        {
+            HTTPClientResponse resp;
+            scope(failure) {
+                resp.dropBody();
+                resp.destroy();
+            }
+
+            resp = requestHTTP("https://" ~ endpoint ~ "/" ~ resource, (scope HTTPClientRequest req) {
+                req.method = method;
+                
+                foreach(key, value; headers)
+                    req.headers[key] = value;
+
+                //Since we might be doing retries, update the date
+                auto isoTimeString = currentTimeString();
+                auto date = isoTimeString.dateFromISOString;
+                auto time = isoTimeString.timeFromISOString;
+                req.headers["x-amz-date"] = currentTimeString();
+
+                string newEncoding = "aws-chunked";
+                if ("Content-Encoding" in headers)
+                    newEncoding ~= "," ~headers["Transfer-Coding"];
+                req.headers["Content-Encoding"] = newEncoding;
+                req.headers["Transfer-Coding"] = "chunked";
+                req.headers["x-amz-content-sha256"] = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
+                req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
+
+                auto canonicalRequest = CanonicalRequest(
+                        method.to!string,
+                        resource,
+                        null,
+                        [
+                            "host":                         endpoint,
+                            "Content-Encoding":             req.headers["Content-Encoding"],
+                            "x-amz-content-sha256":         req.headers["x-amz-content-sha256"],
+                            "x-amz-date":                   req.headers["x-amz-date"],
+                            "x-amz-decoded-content-length": req.headers["x-amz-decoded-content-length"],
+                        ],
+                        null
+                    );
+                auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
+                
+
+                auto credScope = date ~ "/" ~ region ~ "/" ~ service;
+                auto key = signingKey(creds.accessKeySecret, date, region, service);
+                auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableStringForStream);
+
+                auto authHeader = createSignatureHeader(creds.accessKeyID, credScope, canonicalRequest.headers, binarySignature);
+                req.headers["authorization"] = authHeader;
+
+                auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
+                enforce(outputStream !is null);
+
+                ulong bytesLeft = payloadSize;
+                ubyte[] buffer = new ubyte[](blockSize);
+                auto signature = binarySignature.toHexString().toLower();
+                for (; bytesLeft > 0; bytesLeft -= blockSize)
+                {
+                    auto chunk = SignableChunk(date,time,region,service,signature,hash(buffer));
+                    signature = key.sign(cast(ubyte[])chunk.signableString)
+                                   .toHexString().toLower();
+
+                    payload.read(buffer[0..bytesLeft]);
+                    outputStream.writeChunk(buffer[0..bytesLeft],"signature="~signature);
+                }
+
+            });
+            checkForError(resp);
+
+            return new AWSResponse(resp);
+        }
+        assert(0);
     }
 
     AWSResponse doRequest(string operation, Json request)
