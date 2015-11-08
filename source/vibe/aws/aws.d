@@ -93,6 +93,32 @@ struct ExponentialBackoff
     {
         vibe.core.core.sleep(uniform!("[]")(1, maxSleepMs).msecs);
     }
+
+    int opApply(scope int delegate(ref int) attempt)
+    {
+        for (; !finished; inc())
+        {
+            try
+            {
+                int result = attempt(maxRetries - tries);
+                if (result)
+                    return result;
+            }
+            catch (AWSException ex)
+            {
+                logWarn(ex.msg);
+                // Retry if possible and retriable, otherwise give up.
+                if (!canRetry || !ex.retriable) throw ex;
+            }
+            catch (Throwable t)
+            {
+                logWarn(t.msg);
+                if (!canRetry)
+                    throw t;
+            }
+            sleep();
+        }
+    }
 }
 
 class AWSClient {
