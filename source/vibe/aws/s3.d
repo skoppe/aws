@@ -15,7 +15,7 @@ public:
     this(string bucket, string region, AWSCredentialSource credsSource)
     {
         this.bucket = bucket;
-        super(bucket ~ ".s3-" ~ region ~ ".amazonaws.com/", region, "s3", credsSource);
+        super("s3-" ~ region ~ ".amazonaws.com/" ~ bucket, region, "s3", credsSource);
     }
 
     void put(string resource, RandomAccessStream input, 
