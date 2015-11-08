@@ -7,6 +7,8 @@
 	"authors": ["rix0rrr", "yawniek"],
     "targetType": "library",
 	"dependencies": {
-		"vibe-d": "~>0.7.23"
+		"vibe-d": {
+			"path": "../vibe.d",
+		}
 	}
 }
