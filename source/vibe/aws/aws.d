@@ -115,7 +115,7 @@ struct ExponentialBackoff
             }
             catch (Throwable t) //ssl errors from ssl.d
             {
-                logWarn(t.msg);
+                logWarn(typeid(t).name ~ " occurred at " ~ t.file ~ ":" ~ t.line.to!string ~ ":" ~ t.msg);
                 if (!canRetry)
                     throw t;
             }
@@ -157,10 +157,12 @@ class AWSClient {
         foreach(triesLeft; retries)
         {
             HTTPClientResponse resp;
-            scope(failure) {
-                resp.dropBody();
-                resp.destroy();
-            }
+            scope(failure) 
+                if (resp)
+                {
+                    resp.dropBody();
+                    resp.destroy();
+                }
 
             resp = requestHTTP("https://" ~ endpoint ~ "/" ~ resource, (scope HTTPClientRequest req) {
                 req.method = method;
