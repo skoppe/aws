@@ -1,0 +1,16 @@
+{
+	"name": "test-aws-s3",
+	"description": "A simple vibe.d server application.",
+	"copyright": "Copyright © 2015, manuel",
+	"authors": ["manuel"],
+	"dependencies": {
+        "vibe-aws": {
+            "path": "../../",
+        },
+		"vibe-d": {
+            "path": "../../../vibe.d",
+        },
+        "botan": "~>1.12.0",
+	},
+	"versions": ["VibeDefaultMain"]
+}
