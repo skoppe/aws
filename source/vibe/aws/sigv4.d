@@ -10,7 +10,8 @@ import std.string;
 import vibe.textfilter.urlencode;
 
 
-const algorithm = "AWS4-HMAC-SHA256";
+immutable algorithm = "AWS4-HMAC-SHA256";
+immutable streaming_payload_hash = "STREAMING-" ~ algorithm ~ "-PAYLOAD";
 
 struct CanonicalRequest 
 {
@@ -21,7 +22,7 @@ struct CanonicalRequest
     ubyte[] payload;
 }
 
-string canonicalQueryString(string[string] queryParameters)
+string canonicalQueryString(in string[string] queryParameters)
 {
     alias encode = vibe.textfilter.urlencode.formEncode;
 
@@ -35,7 +36,7 @@ string canonicalQueryString(string[string] queryParameters)
     return keys.map!(k => k ~ "=" ~ encoded[k]).join("&");
 }
 
-string canonicalHeaders(string[string] headers)
+string canonicalHeaders(in string[string] headers)
 {
     string[string] trimmed;
     foreach (h; headers.keys())
@@ -47,7 +48,7 @@ string canonicalHeaders(string[string] headers)
     return keys.map!(k => k ~ ":" ~ trimmed[k] ~ "\n").join("");
 }
 
-string signedHeaders(string[string] headers)
+string signedHeaders(in string[string] headers)
 {
     string[] keys = headers.keys().map!(k => k.toLower()).array();
     sort(keys);
@@ -60,17 +61,38 @@ string hash(T)(T payload)
     return hash.toHexString().toLower();
 }
 
-string makeCRSigV4(CanonicalRequest r)
+private string requestStringBase(in CanonicalRequest r)
 {
-    auto cr = 
+    return 
         r.method.toUpper() ~ "\n" ~
         (r.uri.empty ? "/" : r.uri) ~ "\n" ~
         canonicalQueryString(r.queryParameters) ~ "\n" ~
         canonicalHeaders(r.headers) ~ "\n" ~
-        signedHeaders(r.headers) ~ "\n" ~
-        hash(r.payload);
+        signedHeaders(r.headers);
+}
 
-    return hash(cr);
+string requestString(in CanonicalRequest r)
+{
+    return 
+        r.requestStringBase ~ "\n" ~
+        hash(r.payload);
+}
+
+string streamingRequestString(in CanonicalRequest r)
+{
+    return 
+        r.requestStringBase ~ "\n" ~
+        streaming_payload_hash;
+}
+
+string makeCRSigV4(in CanonicalRequest r)
+{
+    return hash(r.requestString);
+}
+
+string makeStreamingSigV4(in CanonicalRequest r)
+{
+    return hash(r.streamingRequestString);
 }
 
 unittest {
@@ -99,11 +121,21 @@ struct SignableRequest
     CanonicalRequest canonicalRequest;
 }
 
-string signableString(SignableRequest r) {
+private string signableStringBase(in SignableRequest r)
+{
     return algorithm ~ "\n" ~
         r.dateString ~ "T" ~ r.timeStringUTC ~ "Z\n" ~
-        r.dateString ~ "/" ~ r.region ~ "/" ~ r.service ~ "/aws4_request\n" ~
-        makeCRSigV4(r.canonicalRequest);
+        r.dateString ~ "/" ~ r.region ~ "/" ~ r.service ~ "/aws4_request";
+}
+
+string signableString(in SignableRequest r) {
+    return r.signableStringBase ~ "\n" ~
+        r.canonicalRequest.makeCRSigV4;
+}
+
+string signableStringForStream(in SignableRequest r) {
+    return r.signableStringBase ~ "\n" ~
+        r.canonicalRequest.makeStreamingSigV4;
 }
 
 unittest {
@@ -219,4 +251,152 @@ string timeFromISOString(string iso)
 
 unittest {
     assert(dateFromISOString("20110909T1203Z") == "20110909");
+}
+
+struct SignableChunk
+{
+    @property static string emptyHash()
+    {
+        return hash("");
+    }
+
+    string dateString;
+    string timeStringUTC;
+    string region;
+    string service;
+
+    string seedHash;
+    string payloadHash;
+}
+
+string signableString(SignableChunk c) {
+    return algorithm ~ "-PAYLOAD\n" ~
+        c.dateString ~ "T" ~ c.timeStringUTC ~ "Z\n" ~
+        c.dateString ~ "/" ~ c.region ~ "/" ~ c.service ~ "/aws4_request\n" ~
+        c.seedHash ~ "\n" ~
+        SignableChunk.emptyHash ~ "\n" ~
+        c.payloadHash;
+}
+
+
+unittest {
+    //Example taken from here: http://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
+
+    immutable string AWSAccessKeyId     = "AKIAIOSFODNN7EXAMPLE";
+    immutable string AWSSecretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+    immutable string isoDateTime = "20130524T000000Z";
+    immutable string date = dateFromISOString(isoDateTime);
+    immutable string time = timeFromISOString(isoDateTime);
+
+    immutable string region  = "us-east-1";
+    immutable string service = "s3";
+    immutable string bucket = "examplebucket";
+
+    /*  Request:
+      
+        PUT /examplebucket/chunkObject.txt HTTP/1.1
+        Host: s3.amazonaws.com
+        x-amz-date: 20130524T000000Z 
+        x-amz-storage-class: REDUCED_REDUNDANCY
+        Authorization: SignatureToBeCalculated
+        x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+        Content-Encoding: aws-chunked
+        x-amz-decoded-content-length: 66560
+        Content-Length: 66824
+        <Payload>
+     */
+
+
+    /*  Canonical Request:
+      
+        PUT
+        /examplebucket/chunkObject.txt
+
+        content-encoding:aws-chunked
+        content-length:66824
+        host:s3.amazonaws.com
+        x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+        x-amz-date:20130524T000000Z
+        x-amz-decoded-content-length:66560
+        x-amz-storage-class:REDUCED_REDUNDANCY
+
+        content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class
+        STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+     */
+
+    auto canonicalRequest = CanonicalRequest(
+            "PUT",
+            "/examplebucket/chunkObject.txt",
+            null,
+            [
+                "content-encoding":             "aws-chunked",
+                "content-length":               "66824",
+                "host":                         "s3.amazonaws.com",
+                "x-amz-content-sha256":         streaming_payload_hash,
+                "x-amz-date":                   isoDateTime,
+                "x-amz-decoded-content-length": "66560",
+                "x-amz-storage-class":          "REDUCED_REDUNDANCY",
+            ],
+            null
+        );
+
+    auto canonicalRequestSignature = canonicalRequest.makeStreamingSigV4;
+    assert(canonicalRequestSignature == "cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455");
+
+    /* Signable String:
+       AWS4-HMAC-SHA256
+       20130524T000000Z
+       20130524/us-east-1/s3/aws4_request
+       cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455
+     */
+
+    auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
+    auto signableString = signableRequest.signableStringForStream;
+    assert(signableString == "AWS4-HMAC-SHA256\n" ~
+                             "20130524T000000Z\n" ~ 
+                             "20130524/us-east-1/s3/aws4_request\n" ~
+                             "cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455");
+
+    auto key = signingKey(AWSSecretAccessKey, date, region, service);
+    auto seedSignature = key.sign(cast(ubyte[])signableString).toHexString().toLower();
+    assert(seedSignature == "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9");
+
+    auto payload1 = new ubyte[](0x10000);
+    payload1[] = 97;
+    auto chunk1 = SignableChunk(date,time,region,service,seedSignature,hash(payload1));
+    auto signableChunkString1 = chunk1.signableString;
+    assert(signableChunkString1 == "AWS4-HMAC-SHA256-PAYLOAD\n" ~ 
+                                   "20130524T000000Z\n" ~ 
+                                   "20130524/us-east-1/s3/aws4_request\n" ~ 
+                                   "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9\n" ~ 
+                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~ 
+                                   "bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a");
+    auto chunkSignature1 = key.sign(cast(ubyte[])signableChunkString1).toHexString().toLower();
+    assert(chunkSignature1 == "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648");
+
+    auto payload2 = new ubyte[](0x400);
+    payload2[] = 97;
+    auto chunk2 = SignableChunk(date,time,region,service,chunkSignature1,hash(payload2));
+    auto signableChunkString2 = chunk2.signableString;
+    assert(signableChunkString2 == "AWS4-HMAC-SHA256-PAYLOAD\n" ~
+                                   "20130524T000000Z\n" ~
+                                   "20130524/us-east-1/s3/aws4_request\n" ~
+                                   "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648\n" ~
+                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~
+                                   "2edc986847e209b4016e141a6dc8716d3207350f416969382d431539bf292e4a");
+    auto chunkSignature2 = key.sign(cast(ubyte[])signableChunkString2).toHexString().toLower();
+    assert(chunkSignature2 == "0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497");
+
+    auto payload3 = new ubyte[](0);
+    auto chunk3 = SignableChunk(date,time,region,service,chunkSignature2,hash(payload3));
+    auto signableChunkString3 = chunk3.signableString;
+    assert(signableChunkString3 == "AWS4-HMAC-SHA256-PAYLOAD\n" ~
+                                   "20130524T000000Z\n" ~
+                                   "20130524/us-east-1/s3/aws4_request\n" ~
+                                   "0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497\n" ~
+                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~
+                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    auto chunkSignature3 = key.sign(cast(ubyte[])signableChunkString3).toHexString().toLower();
+    assert(chunkSignature3 == "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
 }
