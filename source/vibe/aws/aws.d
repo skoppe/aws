@@ -164,7 +164,10 @@ class AWSClient {
                     resp.destroy();
                 }
 
-            resp = requestHTTP("https://" ~ endpoint ~ "/" ~ resource, (scope HTTPClientRequest req) {
+            if (!resource.startsWith("/"))
+                resource = "/" ~ resource;
+
+            resp = requestHTTP("https://" ~ endpoint ~ resource, (scope HTTPClientRequest req) {
                 req.method = method;
                 
                 foreach(key, value; headers)
@@ -178,28 +181,36 @@ class AWSClient {
 
                 string newEncoding = "aws-chunked";
                 if ("Content-Encoding" in headers)
-                    newEncoding ~= "," ~headers["Transfer-Coding"];
+                    newEncoding ~= "," ~headers["Content-Encoding"];
                 req.headers["Content-Encoding"] = newEncoding;
-                req.headers["Transfer-Coding"] = "chunked";
+                req.headers["Transfer-Encoding"] = "chunked";
                 req.headers["x-amz-content-sha256"] = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
                 req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
+                req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
+
+                if ("Content-Length" in headers)
+                    req.headers.remove("Content-Length");
+
+                if ("x-amz-storage-class" !in req.headers)
+                        req.headers["x-amz-storage-class"] = "STANDARD";
 
                 auto canonicalRequest = CanonicalRequest(
                         method.to!string,
                         resource,
                         null,
                         [
-                            "host":                         endpoint,
-                            "Content-Encoding":             req.headers["Content-Encoding"],
+                            "host":                         req.headers["host"],
+                            "content-encoding":             req.headers["Content-Encoding"],
+                            "transfer-encoding":            req.headers["Transfer-Encoding"],
                             "x-amz-content-sha256":         req.headers["x-amz-content-sha256"],
                             "x-amz-date":                   req.headers["x-amz-date"],
                             "x-amz-decoded-content-length": req.headers["x-amz-decoded-content-length"],
+                            "x-amz-storage-class":          req.headers["x-amz-storage-class"],
                         ],
                         null
                     );
-                auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
-                
 
+                auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
                 auto credScope = date ~ "/" ~ region ~ "/" ~ service;
                 auto key = signingKey(creds.accessKeySecret, date, region, service);
                 auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableStringForStream);
@@ -210,21 +221,42 @@ class AWSClient {
                 auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
                 enforce(outputStream !is null);
 
-                ulong bytesLeft = payloadSize;
                 ubyte[] buffer = new ubyte[](blockSize);
                 auto signature = binarySignature.toHexString().toLower();
-                for (; bytesLeft > 0; bytesLeft -= blockSize)
+                auto readChunk = (ulong numBytes) {
+                        auto bytes = buffer[0..numBytes];
+                        payload.read(bytes);
+                        auto chunk = SignableChunk(date,time,region,service,signature,hash(bytes));
+                        signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
+                        outputStream.writeChunk(bytes,"chunk-signature="~signature);
+                    };
+
+                ulong bytesLeft = payloadSize;
+                while(true)
                 {
-                    auto chunk = SignableChunk(date,time,region,service,signature,hash(buffer));
-                    signature = key.sign(cast(ubyte[])chunk.signableString)
-                                   .toHexString().toLower();
+                    readChunk(bytesLeft);
 
-                    payload.read(buffer[0..bytesLeft]);
-                    outputStream.writeChunk(buffer[0..bytesLeft],"signature="~signature);
+                    if (bytesLeft < blockSize)
+                            break;
+
+                    bytesLeft -= blockSize;
                 }
-
+                readChunk(0);
             });
-            checkForError(resp);
+            //checkForError(resp);
+
+            ubyte[] buffer = new ubyte[](1024);
+            string b = "";
+            auto reader = resp.bodyReader;
+            while(!reader.empty)
+            {
+                auto size = reader.leastSize;
+                if (buffer.length < size)
+                    buffer = new ubyte[](size);
+
+                reader.read(buffer[0..size]);
+                b ~= cast(string)buffer[0..size];
+            }
 
             return new AWSResponse(resp);
         }
