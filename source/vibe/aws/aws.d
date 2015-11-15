@@ -220,6 +220,7 @@ abstract class RESTClient {
             return doUpload(method,resource,headers,additionalSignedHeaders,
                             payload,payload.size,blockSize);
         }
+        assert(0);
     }
 
     HTTPClientResponse doUpload(HTTPMethod method, string resource, 
