@@ -11,6 +11,11 @@
             "path": "../../../vibe.d",
         },
         "botan": "~>1.12.0",
+        "kxml": "~>1.0.1",
+        "memutils": "~>0.4.3",
 	},
-	"versions": ["VibeDefaultMain"]
+	"versions": [
+        "VibeDefaultMain",
+        "VibeNoSSL"
+    ]
 }
