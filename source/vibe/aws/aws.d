@@ -19,6 +19,10 @@ import vibe.inet.message;
 
 import std.digest.sha;
 import vibe.aws.sigv4;
+import std.math;
+
+import memutils.all;
+import kxml.xml;
 
 public import vibe.aws.credentials;
 
@@ -107,21 +111,281 @@ struct ExponentialBackoff
                 if (result)
                     return result;
             }
-            catch (AWSException ex)
+            catch (AWSException e)
             {
-                logWarn(ex.msg);
+                logWarn(typeid(e).name ~ " occurred at " ~ e.file ~ ":" ~ e.line.to!string ~ " : " ~ e.msg);
                 // Retry if possible and retriable, otherwise give up.
-                if (!canRetry || !ex.retriable) throw ex;
+                if (!canRetry || !e.retriable) 
+                    throw e;
             }
-            catch (Throwable t) //ssl errors from ssl.d
+            catch (Exception e) //ssl errors from ssl.d
             {
-                logWarn(typeid(t).name ~ " occurred at " ~ t.file ~ ":" ~ t.line.to!string ~ ":" ~ t.msg);
+                logWarn(typeid(e).name ~ " occurred at " ~ e.file ~ ":" ~ e.line.to!string ~ " : " ~ e.msg);
                 if (!canRetry)
-                    throw t;
+                    throw e;
             }
             sleep();
         }
         return result;
+    }
+}
+
+abstract class RESTClient {
+    immutable string endpoint;
+    immutable string region;
+    immutable string service;
+
+    private AWSCredentialSource m_credsSource;
+    private ClientConfiguration m_config;
+
+    this(string endpoint, string region, string service, AWSCredentialSource credsSource, ClientConfiguration config=ClientConfiguration()) 
+    {
+        this.region = region;
+        this.endpoint = endpoint;
+        this.service = service;
+        this.m_credsSource = credsSource;
+        this.m_config = config;
+    }
+
+    private static string buildQueryParameterString(string[string] queryParameters)
+    {
+        import vibe.textfilter.urlencode;
+
+        auto stringBuilder = appender!string;
+        bool firstParameter = true;
+        foreach(parameter, value; queryParameters)
+        {
+            if (firstParameter)
+                firstParameter = false;
+            else
+                stringBuilder.put("&");
+
+            stringBuilder.put(urlEncode(parameter));
+            stringBuilder.put("=");
+            stringBuilder.put(urlEncode(value));
+        }
+        return stringBuilder.data;
+    }
+
+    HTTPClientResponse doRequest(HTTPMethod method, string resource, string[string] queryParameters, in InetHeaderMap headers)
+    {
+        if (!resource.startsWith("/"))
+            resource = "/" ~ resource;
+
+        //Initialize credentials
+        auto credScope = region ~ "/" ~ service;
+        auto creds = m_credsSource.credentials(credScope);
+
+        auto queryString = buildQueryParameterString(queryParameters);
+
+        auto retries = ExponentialBackoff(m_config.maxErrorRetry);
+        foreach(triesLeft; retries)
+        {
+            HTTPClientResponse resp;
+            scope(failure) 
+                if (resp)
+                {
+                    resp.dropBody();
+                    resp.destroy();
+                }
+
+            resp = requestHTTP("https://" ~ endpoint ~ resource ~ "?" ~ queryString, (scope HTTPClientRequest req) {
+                req.method = method;
+                
+                foreach(key, value; headers)
+                    req.headers[key] = value;
+
+                req.headers["host"] = endpoint;
+                auto timeString = currentTimeString();
+                req.headers["x-amz-date"] = timeString;
+                req.headers["x-amz-content-sha256"] = sha256Of("").toHexString().toLower();
+                if (creds.sessionToken && !creds.sessionToken.empty)
+                    req.headers["x-amz-security-token"] = creds.sessionToken;
+                signRequest(req, queryParameters, null, creds, timeString, region, service);
+            });
+            checkForError(resp);
+            return resp;
+        }
+        assert(0);
+    }
+
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+                                in InetHeaderMap headers, in string[] additionalSignedHeaders,
+                                scope RandomAccessStream payload, ulong blockSize = 512*1024)
+    {
+        auto retries = ExponentialBackoff(m_config.maxErrorRetry);
+        foreach(triesLeft; retries)
+        {
+            payload.seek(0);
+            return doUpload(method,resource,headers,additionalSignedHeaders,
+                            payload,payload.size,blockSize);
+        }
+    }
+
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+                                in InetHeaderMap headers, in string[] additionalSignedHeaders,
+                                scope InputStream payload, ulong payloadSize, ulong blockSize = 512*1024)
+    {
+        //Calculate the body size upfront for the "Content-Length" header
+        auto base16 = (ulong x) { return ceil(log2(x)/4).to!ulong; };
+        enum ulong signatureSize = ";chunk-signature=".length + 64;
+        immutable ulong numFullSizeBlocks = payloadSize/blockSize;
+        immutable ulong lastBlockSize = payloadSize - blockSize*numFullSizeBlocks;
+        
+        immutable ulong bodySize =  numFullSizeBlocks     *(base16(blockSize)     + signatureSize + 4 + blockSize) //Full-Sized blocks (4 = 2*"\r\n")
+                                 + (lastBlockSize ? 1 : 0)*(base16(lastBlockSize) + signatureSize + 4 + lastBlockSize) //Part-Sized last block
+                                 + (1 + signatureSize + 4); //Finishing 0-sized block
+
+
+        if (!resource.startsWith("/"))
+            resource = "/" ~ resource;
+
+        //Initialize credentials
+        auto credScope = region ~ "/" ~ service;
+        auto creds = m_credsSource.credentials(credScope);
+
+        HTTPClientResponse resp;
+        scope(failure) 
+            if (resp)
+            {
+                resp.dropBody();
+                resp.destroy();
+            }
+
+        resp = requestHTTP("https://" ~ endpoint ~ resource, (scope HTTPClientRequest req) {
+            req.method = method;
+            
+            //Initialize the headers
+            foreach(key, value; headers)
+                req.headers[key] = value;
+
+            //Since we might be doing retries, update the date
+            auto isoTimeString = currentTimeString();
+            req.headers["x-amz-date"] = isoTimeString;
+            auto date = isoTimeString.dateFromISOString;
+            auto time = isoTimeString.timeFromISOString;
+            
+            //Adjust the headers necessary for a chunked transmission
+            string newEncoding = "aws-chunked";
+            if ("Content-Encoding" in headers)
+                newEncoding ~= "," ~headers["Content-Encoding"];
+            
+            if ("Content-Type" in headers)
+                req.contentType = headers["Content-Type"];
+            else
+                req.contentType = "application/octet-stream";
+            
+            req.headers["Content-Length"] = bodySize.to!string;
+            req.headers["Content-Encoding"] = newEncoding;
+            req.headers["x-amz-content-sha256"] = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
+            req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
+
+            //Seems not to be working properly (S3 returns error if "Content-Length" is not used)
+//                req.headers["Transfer-Encoding"] = "chunked";
+//                if ("Content-Length" in headers)
+//                    req.headers.remove("Content-Length");
+
+            auto canonicalRequest = CanonicalRequest(
+                    method.to!string,
+                    resource,
+                    null,
+                    [
+                        "host":                         req.headers["host"],
+                        "content-encoding":             req.headers["Content-Encoding"],
+                        "content-length":               req.headers["Content-Length"],
+                        "x-amz-content-sha256":         req.headers["x-amz-content-sha256"],
+                        "x-amz-date":                   req.headers["x-amz-date"],
+                        "x-amz-decoded-content-length": req.headers["x-amz-decoded-content-length"],
+//                        "transfer-encoding":            req.headers["Transfer-Encoding"],
+                    ],
+                    null
+                );
+
+            foreach (key; additionalSignedHeaders)
+                canonicalRequest.headers[key] = req.headers[key];
+
+            //Calculate the seed signature
+            auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
+            auto key = signingKey(creds.accessKeySecret, date, region, service);
+            auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableStringForStream);
+
+            auto credScope = date ~ "/" ~ region ~ "/" ~ service;
+            auto authHeader = createSignatureHeader(creds.accessKeyID, credScope, canonicalRequest.headers, binarySignature);
+            req.headers["authorization"] = authHeader;
+
+            //Write the data in chunks to the stream
+            auto outputStream = new ChunkedOutputStream(req.bodyWriter);
+//            auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
+//            enforce(outputStream !is null);
+
+            auto buffer = ThreadMem.alloc!(ubyte[])(blockSize);
+            scope(exit)
+                ThreadMem.free(buffer);
+
+            auto signature = binarySignature.toHexString().toLower();
+            auto readChunk = (ulong numBytes) {
+                    auto bytes = buffer[0..numBytes];
+                    payload.read(bytes);
+                    auto chunk = SignableChunk(date,time,region,service,signature,hash(bytes));
+                    signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
+
+                    if (numBytes)
+                        outputStream.writeChunk(bytes,"chunk-signature="~signature);
+                    else
+                        outputStream.finalize("chunk-signature="~signature);
+                };
+
+            ulong bytesLeft = payloadSize;
+            while(true)
+            {
+                readChunk(min(bytesLeft,blockSize));
+                if (bytesLeft > blockSize)
+                    bytesLeft -= blockSize;
+                else
+                    break;
+            }
+            readChunk(0);
+        });
+        checkForError(resp);
+        return resp;
+    }
+
+    XmlNode readXML(HTTPClientResponse response)
+    {
+        auto stringBuilder = appender!string;
+        auto reader = response.bodyReader;
+
+        auto buffer = ThreadMem.alloc!(ubyte[])(1024);
+        scope(exit)
+            ThreadMem.free(buffer);
+
+        while(reader.leastSize > 0)
+        {
+            auto size = min(reader.leastSize,buffer.length);
+            auto bytes = buffer[0..size];
+            reader.read(bytes);
+            stringBuilder.put(bytes);
+        }
+        return readDocument(stringBuilder.data,true);
+    }
+
+    void checkForError(HTTPClientResponse response)
+    {
+        if (response.statusCode < 400) 
+            return; // No error
+
+        auto document = readXML(response);
+        auto code = document.parseXPath("/Error/Code")[0].getCData;
+        auto message = document.parseXPath("/Error/Message")[0].getCData;
+        throw makeException(code, response.statusCode / 100 == 5, message);
+    }
+
+    AWSException makeException(string type, bool retriable, string message)
+    {
+        if (type == "UnrecognizedClientException" 
+         || type == "InvalidSignatureException")            
+            throw new AuthorizationException(type, message);
+        return new AWSException(type, retriable, message);
     }
 }
 
@@ -142,125 +406,6 @@ class AWSClient {
         this.service = service;
         this.m_credsSource = credsSource;
         this.m_config = config;
-    }
-
-    AWSResponse doRESTUpload(HTTPMethod method, string resource, in InetHeaderMap headers,
-                             InputStream payload, ulong payloadSize, ulong blockSize = 512*1024
-                            )
-    {
-        enforce(blockSize > 8*1024, "The block size for an upload has to be bigger than 8KB.");
-
-        auto credScope = region ~ "/" ~ service;
-        auto creds = m_credsSource.credentials(credScope);
-
-        auto retries = ExponentialBackoff(m_config.maxErrorRetry);
-        foreach(triesLeft; retries)
-        {
-            HTTPClientResponse resp;
-            scope(failure) 
-                if (resp)
-                {
-                    resp.dropBody();
-                    resp.destroy();
-                }
-
-            if (!resource.startsWith("/"))
-                resource = "/" ~ resource;
-
-            resp = requestHTTP("https://" ~ endpoint ~ resource, (scope HTTPClientRequest req) {
-                req.method = method;
-                
-                foreach(key, value; headers)
-                    req.headers[key] = value;
-
-                //Since we might be doing retries, update the date
-                auto isoTimeString = currentTimeString();
-                auto date = isoTimeString.dateFromISOString;
-                auto time = isoTimeString.timeFromISOString;
-                req.headers["x-amz-date"] = currentTimeString();
-
-                string newEncoding = "aws-chunked";
-                if ("Content-Encoding" in headers)
-                    newEncoding ~= "," ~headers["Content-Encoding"];
-                req.headers["Content-Encoding"] = newEncoding;
-                req.headers["Transfer-Encoding"] = "chunked";
-                req.headers["x-amz-content-sha256"] = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
-                req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
-                req.headers["x-amz-decoded-content-length"] = payloadSize.to!string;
-
-                if ("Content-Length" in headers)
-                    req.headers.remove("Content-Length");
-
-                if ("x-amz-storage-class" !in req.headers)
-                        req.headers["x-amz-storage-class"] = "STANDARD";
-
-                auto canonicalRequest = CanonicalRequest(
-                        method.to!string,
-                        resource,
-                        null,
-                        [
-                            "host":                         req.headers["host"],
-                            "content-encoding":             req.headers["Content-Encoding"],
-                            "transfer-encoding":            req.headers["Transfer-Encoding"],
-                            "x-amz-content-sha256":         req.headers["x-amz-content-sha256"],
-                            "x-amz-date":                   req.headers["x-amz-date"],
-                            "x-amz-decoded-content-length": req.headers["x-amz-decoded-content-length"],
-                            "x-amz-storage-class":          req.headers["x-amz-storage-class"],
-                        ],
-                        null
-                    );
-
-                auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
-                auto credScope = date ~ "/" ~ region ~ "/" ~ service;
-                auto key = signingKey(creds.accessKeySecret, date, region, service);
-                auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableStringForStream);
-
-                auto authHeader = createSignatureHeader(creds.accessKeyID, credScope, canonicalRequest.headers, binarySignature);
-                req.headers["authorization"] = authHeader;
-
-                auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
-                enforce(outputStream !is null);
-
-                ubyte[] buffer = new ubyte[](blockSize);
-                auto signature = binarySignature.toHexString().toLower();
-                auto readChunk = (ulong numBytes) {
-                        auto bytes = buffer[0..numBytes];
-                        payload.read(bytes);
-                        auto chunk = SignableChunk(date,time,region,service,signature,hash(bytes));
-                        signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
-                        outputStream.writeChunk(bytes,"chunk-signature="~signature);
-                    };
-
-                ulong bytesLeft = payloadSize;
-                while(true)
-                {
-                    readChunk(bytesLeft);
-
-                    if (bytesLeft < blockSize)
-                            break;
-
-                    bytesLeft -= blockSize;
-                }
-                readChunk(0);
-            });
-            //checkForError(resp);
-
-            ubyte[] buffer = new ubyte[](1024);
-            string b = "";
-            auto reader = resp.bodyReader;
-            while(!reader.empty)
-            {
-                auto size = reader.leastSize;
-                if (buffer.length < size)
-                    buffer = new ubyte[](size);
-
-                reader.read(buffer[0..size]);
-                b ~= cast(string)buffer[0..size];
-            }
-
-            return new AWSResponse(resp);
-        }
-        assert(0);
     }
 
     AWSResponse doRequest(string operation, Json request)
@@ -287,7 +432,7 @@ class AWSClient {
                     if (creds.sessionToken && !creds.sessionToken.empty)
                         req.headers["x-amz-security-token"] = creds.sessionToken;
                     req.contentType = "application/x-amz-json-1.1";
-                    signRequest(req, jsonString, creds, timeString, region, service);
+                    signRequest(req, null, jsonString, creds, timeString, region, service);
                     req.writeBody(jsonString);
                 });
 
@@ -316,20 +461,13 @@ class AWSClient {
             {
               if (!backoff.canRetry)
               {
-                logError("no retries left, failing request");
+                vibe.core.log.logError("no retries left, failing request");
                 throw(t);
               }
             }
             backoff.sleep();
         }
         assert(0);
-    }
-
-    protected auto currentTimeString()
-    {
-        auto t = Clock.currTime(UTC());
-        t.fracSec = FracSec.zero();
-        return t.toISOString();
     }
 
     void checkForError(HTTPClientResponse response)
@@ -340,7 +478,7 @@ class AWSClient {
 
         throw makeException(bod.__type.get!string, response.statusCode / 100 == 5, bod.message.opt!string(""));
     }
-    
+
     AWSException makeException(string type, bool retriable, string message)
     {
         if (type == exceptionPrefix ~ "UnrecognizedClientException" || type == exceptionPrefix ~ "InvalidSignatureException")
@@ -349,7 +487,16 @@ class AWSClient {
     }
 }
 
-private void signRequest(HTTPClientRequest req, ubyte[] requestBody, AWSCredentials creds, string timeString, string region, string service)
+private auto currentTimeString()
+{
+    auto t = Clock.currTime(UTC());
+    t.fracSec = FracSec.zero();
+    return t.toISOString();
+}
+
+private void signRequest(HTTPClientRequest req, string[string] queryParameters,
+                         ubyte[] requestBody, AWSCredentials creds, 
+                         string timeString, string region, string service)
 {
     auto dateString = dateFromISOString(timeString);
     auto credScope = dateString ~ "/" ~ region ~ "/" ~ service;
@@ -360,7 +507,14 @@ private void signRequest(HTTPClientRequest req, ubyte[] requestBody, AWSCredenti
     signRequest.region = region;
     signRequest.service = service;
     signRequest.canonicalRequest.method = req.method.to!string();
-    signRequest.canonicalRequest.uri = req.requestURL; // FIXME: Can include query params
+
+    auto pos = req.requestURL.indexOf("?");
+    if (pos < 0)
+        pos = req.requestURL.length;
+    signRequest.canonicalRequest.uri = req.requestURL[0..pos];
+
+    signRequest.canonicalRequest.queryParameters = queryParameters;
+
     auto reqHeaders = req.headers.toRepresentation;
     foreach (x; reqHeaders) {
         signRequest.canonicalRequest.headers[x.key] = x.value;

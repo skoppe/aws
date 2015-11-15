@@ -9,6 +9,8 @@
 	"dependencies": {
 		"vibe-d": {
 			"path": "../vibe.d",
-		}
+		},
+        "kxml": "~>1.0.1",
+        "memutils": "~>0.4.3",
 	}
 }
