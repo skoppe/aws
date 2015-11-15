@@ -359,8 +359,15 @@ unittest {
                              "cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455");
 
     auto key = signingKey(AWSSecretAccessKey, date, region, service);
-    auto seedSignature = key.sign(cast(ubyte[])signableString).toHexString().toLower();
+    auto binarySignature = key.sign(cast(ubyte[])signableString);
+    auto seedSignature = binarySignature.toHexString().toLower();
     assert(seedSignature == "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9");
+
+    auto credScope = date ~ "/" ~ region ~ "/" ~ service;
+    auto authHeader = createSignatureHeader(AWSAccessKeyId, credScope, canonicalRequest.headers, binarySignature);
+    assert(authHeader == "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, " ~
+                         "SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class, " ~
+                         "Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9");
 
     auto payload1 = new ubyte[](0x10000);
     payload1[] = 97;
