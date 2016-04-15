@@ -8,10 +8,8 @@ import vibe.aws.sigv4;
 
 class S3 : RESTClient
 {
-private:
-    string bucket;
+    private string bucket;
 
-public:
     enum StorageClass: string
     {
         STANDARD = "STANDARD",
