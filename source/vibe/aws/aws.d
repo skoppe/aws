@@ -10,12 +10,14 @@ import std.random;
 import std.range;
 import std.stdio;
 import std.string;
+import std.conv;
 
 import vibe.core.core;
 import vibe.core.log;
 import vibe.data.json;
 import vibe.http.client;
 import vibe.inet.message;
+import vibe.http.common;
 
 import std.digest.sha;
 import vibe.aws.sigv4;
@@ -324,6 +326,7 @@ abstract class RESTClient {
                 ThreadMem.free(buffer);
 
             auto signature = binarySignature.toHexString().toLower();
+            outputStream.chunkExtensionCallback = (_) => "chunk-signature=" ~ signature;
             auto readChunk = (ulong numBytes) {
                     auto bytes = buffer[0..numBytes];
                     payload.read(bytes);
@@ -331,9 +334,14 @@ abstract class RESTClient {
                     signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
 
                     if (numBytes)
-                        outputStream.writeChunk(bytes,"chunk-signature="~signature);
+                    {
+                        outputStream.write(bytes);
+                        outputStream.flush;
+                    }
                     else
-                        outputStream.finalize("chunk-signature="~signature);
+                    {
+                        outputStream.finalize();
+                    }
                 };
 
             ulong bytesLeft = payloadSize;
@@ -491,7 +499,7 @@ class AWSClient {
 private auto currentTimeString()
 {
     auto t = Clock.currTime(UTC());
-    t.fracSec = FracSec.zero();
+    t.fracSecs = 0.seconds;
     return t.toISOString();
 }
 

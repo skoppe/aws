@@ -101,7 +101,7 @@ shared static this()
         logInfo("Upload complete.");
     });
 
-    setTimer(0.seconds, {
+    setTimer(1.msecs, {
         synchronized(mutex)
             while(true)
             {

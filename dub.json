@@ -7,9 +7,7 @@
 	"authors": ["rix0rrr", "yawniek"],
     "targetType": "library",
 	"dependencies": {
-		"vibe-d": {
-			"path": "../vibe.d",
-		},
+		"vibe-d": "~>0.7.28",
         "kxml": "~>1.0.1",
         "memutils": "~>0.4.3",
 	}

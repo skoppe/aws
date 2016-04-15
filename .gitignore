@@ -5,3 +5,9 @@ __dummy.html
 *.a
 *.obj
 __test__library__
+
+dub.selections.json
+
+examples/s3/test-aws-s3
+
+*.sublime-project
