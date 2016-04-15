@@ -88,6 +88,8 @@ class S3 : RESTClient
             result.nextMarker = response.parseXPath("/ListBucketResult/NextMarker")[0].getCData;
 
         auto entries = response.parseXPath("/ListBucketResult/Contents");
+
+        result.resources.reserve = 1000;
         foreach(node; entries)
         {
             BucketListResult.S3Resource entry;
@@ -99,12 +101,15 @@ class S3 : RESTClient
             entry.size = node.parseXPath("Size")[0].getCData.to!ulong;
             entry.storageClass = node.parseXPath("StorageClass")[0].getCData.toImpl!StorageClass;
 
-            result.resources ~= entry;
+            result.resources.assumeSafeAppend ~= entry;
         }
+        result.resources.reserve = result.resources.length;
 
+        result.commonPrefixes.reserve = 1000;
         entries = response.parseXPath("/ListBucketResult/CommonPrefixes/Prefix");
         foreach(node; entries)
-            result.commonPrefixes ~= node.getCData;
+            result.commonPrefixes.assumeSafeAppend ~= node.getCData;
+        result.commonPrefixes.reserve = result.commonPrefixes.length;
 
         return result;
     }
