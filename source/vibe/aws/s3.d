@@ -6,16 +6,45 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.sigv4;
 
+
+enum StorageClass: string
+{
+    STANDARD = "STANDARD",
+    REDUCED_REDUNDANCY = "REDUCED_REDUNDANCY",
+    GLACIER = "GLACIER"
+}
+
+struct BucketListResult
+{
+    static struct S3Resource
+    {
+        static struct Owner
+        {
+            string id;
+            string displayName;
+        }
+
+        string key;
+        string lastModfied;
+        string etag;
+        ulong size;
+        Owner owner;
+        StorageClass storageClass;
+    }
+
+    string name;
+    string prefix;
+    string marker;
+    string nextMarker;
+    ulong maxKeys;
+    bool isTruncated;
+    S3Resource[] resources;
+    string[] commonPrefixes;
+}
+
 class S3 : RESTClient
 {
     private string bucket;
-
-    enum StorageClass: string
-    {
-        STANDARD = "STANDARD",
-        REDUCED_REDUNDANCY = "REDUCED_REDUNDANCY",
-        GLACIER = "GLACIER"
-    }
 
     this(string bucket, string region, AWSCredentialSource credsSource, ClientConfiguration config = ClientConfiguration())
     {
@@ -47,34 +76,6 @@ class S3 : RESTClient
             queryParameters["max-keys"] = maxKeys.to!string;
 
         auto response = readXML(doRequest(HTTPMethod.GET, "/", queryParameters, headers));
-
-        struct BucketListResult
-        {
-            struct S3Resource
-            {
-                struct Owner
-                {
-                    string id;
-                    string displayName;
-                }
-
-                string key;
-                string lastModfied;
-                string etag;
-                ulong size;
-                Owner owner;
-                StorageClass storageClass;
-            }
-
-            string name;
-            string prefix;
-            string marker;
-            string nextMarker;
-            ulong maxKeys;
-            bool isTruncated;
-            S3Resource[] resources;
-            string[] commonPrefixes;
-        }
 
         BucketListResult result;
         result.name = response.parseXPath("/ListBucketResult/Name")[0].getCData;
