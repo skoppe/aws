@@ -6,7 +6,6 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.sigv4;
 
-
 enum StorageClass: string
 {
     STANDARD = "STANDARD",
@@ -36,10 +35,116 @@ struct BucketListResult
     string prefix;
     string marker;
     string nextMarker;
-    ulong maxKeys;
-    bool isTruncated;
     S3Resource[] resources;
     string[] commonPrefixes;
+    uint maxKeys;
+    bool isTruncated;
+}
+
+auto listFilesRecursive(S3 client, string path = null)
+{
+    if(!path.empty && !path.endsWith("/"))
+        path ~= "/";
+    return S3Resources(client, null, path);
+}
+
+auto listFiles(S3 client, string path = null)
+{
+    if(!path.empty && !path.endsWith("/"))
+        path ~= "/";
+    return S3Resources(client, "/", path);
+}
+
+auto listFolders(S3 client, string path = null)
+{
+    if(!path.empty && !path.endsWith("/"))
+        path ~= "/";
+    return S3Prefixes(client, "/", path);
+}
+
+struct S3Resources
+{
+    import std.range.primitives;
+    mixin _S3Common;
+
+    auto front() @property
+    {
+        assert(!empty);
+        return res.resources.front;
+    }
+
+    auto empty() const @property
+    {
+        return res.resources.empty;
+    }
+
+    auto popFront()
+    {
+        assert(!empty);
+        res.resources.popFront;
+        if(empty && res.isTruncated)
+        {
+            next;
+        }
+    }
+
+}
+
+struct S3Prefixes
+{
+    import std.range.primitives;
+    mixin _S3Common;
+
+    auto front() @property
+    {
+        assert(!empty);
+        return res.commonPrefixes.front;
+    }
+
+    auto empty() const @property
+    {
+        return res.commonPrefixes.empty;
+    }
+
+    auto popFront()
+    {
+        assert(!empty);
+        res.commonPrefixes.popFront;
+        if(empty && res.isTruncated)
+        {
+            next;
+        }
+    }
+}
+
+private mixin template _S3Common()
+{
+    private S3 client;
+    private BucketListResult res;
+    private string delimiter;
+    private string prefix;
+    private uint maxKeys;
+
+    private void next()
+    {
+        res = client.list(delimiter, prefix, res.nextMarker, maxKeys);
+    }
+
+    @disable this();
+
+    this(S3 client, string delimiter, string prefix, uint maxKeys = 0)
+    {
+        this.client = client;
+        this.delimiter = delimiter;
+        this.prefix = prefix;
+        this.maxKeys = maxKeys;
+        next();
+    }
+
+    auto save() @property
+    {
+        return this;
+    }
 }
 
 class S3 : RESTClient
@@ -81,7 +186,7 @@ class S3 : RESTClient
         result.name = response.parseXPath("/ListBucketResult/Name")[0].getCData;
         result.prefix = response.parseXPath("/ListBucketResult/Prefix")[0].getCData;
         result.marker = response.parseXPath("/ListBucketResult/Marker")[0].getCData;
-        result.maxKeys = response.parseXPath("/ListBucketResult/MaxKeys")[0].getCData.to!ulong;
+        result.maxKeys = response.parseXPath("/ListBucketResult/MaxKeys")[0].getCData.to!uint;
         result.isTruncated = response.parseXPath("/ListBucketResult/IsTruncated")[0].getCData.toLower.to!bool;
 
         if (result.isTruncated)
