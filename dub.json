@@ -1,6 +1,5 @@
 {
 	"name": "vibe-s3",
-    "version": "0.0.2",
 	"description": "vibe.d compatible AWS S3 client",
 	"copyright": "Copyright © 2015, see Authors",
     "license": "MIT",
