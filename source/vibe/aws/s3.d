@@ -180,7 +180,10 @@ class S3 : RESTClient
         if (maxKeys)
             queryParameters["max-keys"] = maxKeys.to!string;
 
-        auto response = readXML(doRequest(HTTPMethod.GET, "/", queryParameters, headers));
+        auto resp = doRequest(HTTPMethod.GET, "/", queryParameters, headers);
+        auto response = readXML(resp);
+        resp.dropBody();
+        resp.destroy();
 
         BucketListResult result;
         result.name = response.parseXPath("/ListBucketResult/Name")[0].getCData;
@@ -226,6 +229,8 @@ class S3 : RESTClient
         headers["Content-Type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        doUpload(HTTPMethod.PUT, resource, headers, signedHeaders, input, chunkSize);
+        auto httpResp = doUpload(HTTPMethod.PUT, resource, headers, signedHeaders, input, chunkSize);
+        httpResp.dropBody();
+        httpResp.destroy();
     }
 }
