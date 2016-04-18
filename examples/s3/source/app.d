@@ -26,9 +26,9 @@ shared static this()
 
     auto mutex = new Mutex;
     auto condition = new TaskCondition(mutex);
-    int runningTasks = 3;
+    int runningTasks = 0;
 
-    setTimer(1.seconds, {
+    setTimer(2.msecs, {
         synchronized(mutex)
             runningTasks++;
 
@@ -59,7 +59,7 @@ shared static this()
         logInfo("List (w/ directories):\n" ~ directories.data ~ files.data);
     });
 
-    setTimer(1.seconds, {
+    setTimer(1.msecs, {
         synchronized(mutex)
             runningTasks++;
 
@@ -101,7 +101,7 @@ shared static this()
         logInfo("Upload complete.");
     });
 
-    setTimer(1.msecs, {
+    setTimer(1.seconds, {
         synchronized(mutex)
             while(true)
             {

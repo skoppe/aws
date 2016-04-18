@@ -26,11 +26,11 @@ shared static this()
 
     auto mutex = new TaskMutex;
     auto condition = new TaskCondition(mutex);
-    int runningTasks = 3;
+    int runningTasks = 4;
 
-    setTimer(1.seconds, {
-        synchronized(mutex)
-            runningTasks++;
+    setTimer(10.msecs, {
+        //synchronized(mutex)
+        //    runningTasks++;
 
         scope(exit)
             synchronized(mutex)
@@ -44,9 +44,9 @@ shared static this()
         }
     });
 
-    setTimer(1.seconds, {
-        synchronized(mutex)
-            runningTasks++;
+    setTimer(10.msecs, {
+        //synchronized(mutex)
+        //    runningTasks++;
 
         scope(exit)
             synchronized(mutex)
@@ -61,9 +61,9 @@ shared static this()
         }
     });
 
-    setTimer(1.seconds, {
-        synchronized(mutex)
-            runningTasks++;
+    setTimer(10.msecs, {
+        //synchronized(mutex)
+        //    runningTasks++;
 
         scope(exit)
             synchronized(mutex)
@@ -78,9 +78,9 @@ shared static this()
         }
     });
 
-    setTimer(1.seconds, {
-        synchronized(mutex)
-            runningTasks++;
+    setTimer(10.msecs, {
+        //synchronized(mutex)
+        //    runningTasks++;
 
         scope(exit)
             synchronized(mutex)

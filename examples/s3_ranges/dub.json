@@ -9,7 +9,6 @@
         }
 	},
 	"versions": [
-        "VibeDefaultMain",
-        "VibeNoSSL"
+        "VibeDefaultMain"
     ]
 }
