@@ -1,13 +1,13 @@
 {
-	"name": "vibe-aws",
+	"name": "vibe-s3",
     "version": "0.0.2",
-	"description": "AWS client library for D",
-	"copyright": "Copyright © 2015, Rico Huijbers, Yannick Koechlin",
+	"description": "vibe.d compatible AWS S3 client",
+	"copyright": "Copyright © 2015, see Authors",
     "license": "MIT",
-	"authors": ["rix0rrr", "yawniek"],
+	"authors": ["Rico Huijbers", "Yannick Koechlin", "Manuel Frischknecht", "Ilya Yaroshenko"],
     "targetType": "library",
 	"dependencies": {
-		"vibe-d": "~>0.7.28",
+		"vibe-d": "~>0.7.29-alpha.3",
         "kxml": "~>1.0.1",
         "memutils": "~>0.4.3",
 	}
