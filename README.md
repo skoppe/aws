@@ -1,6 +1,10 @@
 vibe-s3
 ========
 
+### this library is highly alpha and mostly untested. use at your own risk
+
+see example dub projects for usage
+
 to run the example you need to export your credentials:
 
 ```bash
