@@ -234,11 +234,6 @@ class S3 : RESTClient
         httpResp.destroy();
     }
 
-    /++
-
-    Returns:
-        Response headers list, which has type  DictionaryList!(string,false,12L,false)
-    +/
     void info(string resource, scope void delegate(scope HTTPClientResponse) del,
                 string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
     {
