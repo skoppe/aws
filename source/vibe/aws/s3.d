@@ -268,7 +268,17 @@ class S3 : RESTClient
         typeof(HTTPClientResponse.headers) ret;
         download(resource, (scope HTTPClientResponse resp) {
             ret = resp.headers;
-            resp.readRawBody(del);
+            // workaround for vibe.d
+            if(auto pce = "Content-Encoding" in resp.headers ){
+                if(*pce == "x-gzip") {
+                    resp.headers["Content-Encoding"] = "gzip";
+                }
+                else
+                if(*pce == "") {
+                    *pce = "identity";
+                }
+            }
+            del(resp.bodyReader);
         }, queryParameters, headers);
         return ret;
     }
@@ -284,6 +294,9 @@ class S3 : RESTClient
     auto download(string resource, string saveTo,
                 string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
     {
+        //if("response-content-encoding" !in queryParameters ) {
+        //    queryParameters["response-content-encoding"] = "x-gzip";
+        //}
         auto file = openFile(saveTo, FileMode.createTrunc);
         scope(exit)
             file.close();
