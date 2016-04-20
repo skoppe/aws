@@ -233,4 +233,65 @@ class S3 : RESTClient
         httpResp.dropBody();
         httpResp.destroy();
     }
+
+    /++
+
+    Returns:
+        Response headers list, which has type  DictionaryList!(string,false,12L,false)
+    +/
+    void info(string resource, scope void delegate(scope HTTPClientResponse) del,
+                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
+    {
+        auto httpResp = doRequest(HTTPMethod.HEAD, resource, queryParameters, headers);
+        scope(exit)
+        {
+            httpResp.dropBody();
+            httpResp.destroy();
+        }
+        del(httpResp);
+    }
+
+    void download(string resource, scope void delegate(scope HTTPClientResponse) del,
+                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
+    {
+        auto httpResp = doRequest(HTTPMethod.GET, resource, queryParameters, headers);
+        scope(exit)
+        {
+            httpResp.dropBody();
+            httpResp.destroy();
+        }
+        del(httpResp);
+    }
+
+    /++
+    Returns:
+        Response headers list, which has type  DictionaryList!(string,false,12L,false)
+    +/
+    auto download(string resource, scope void delegate(scope InputStream) del,
+                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
+    {
+        typeof(HTTPClientResponse.headers) ret;
+        download(resource, (scope HTTPClientResponse resp) {
+            ret = resp.headers;
+            resp.readRawBody(del);
+        }, queryParameters, headers);
+        return ret;
+    }
+
+    /// ditto
+    auto download(string resource, scope OutputStream stream,
+                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
+    {
+        return download(resource, (scope InputStream input) { stream.write(input); }, queryParameters, headers);
+    }
+
+    /// ditto
+    auto download(string resource, string saveTo,
+                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
+    {
+        auto file = openFile(saveTo, FileMode.createTrunc);
+        scope(exit)
+            file.close();
+        return download(resource, file, queryParameters, headers);
+    }
 }
