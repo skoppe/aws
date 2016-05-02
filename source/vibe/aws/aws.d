@@ -33,9 +33,9 @@ class AWSException : Exception
     immutable string type;
     immutable bool retriable;
 
-    this(string type, bool retriable, string message)
+    this(string type, bool retriable, string message, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(type ~ ": " ~ message);
+        super(type ~ ": " ~ message, file, line, next);
         this.type = type;
         this.retriable = retriable;
     }
@@ -64,9 +64,9 @@ struct ClientConfiguration
  */
 class AuthorizationException : AWSException
 {
-    this(string type, string message)
+    this(string type, string message, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(type, false, message);
+        super(type, false, message, file, line, next);
     }
 }
 
@@ -318,42 +318,19 @@ abstract class RESTClient {
 
             //Write the data in chunks to the stream
             auto outputStream = new ChunkedOutputStream(req.bodyWriter);
+            outputStream.maxBufferSize = blockSize;
 //            auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
 //            enforce(outputStream !is null);
 
-            auto buffer = ThreadMem.alloc!(ubyte[])(blockSize);
-            scope(exit)
-                ThreadMem.free(buffer);
-
             auto signature = binarySignature.toHexString().toLower();
-            outputStream.chunkExtensionCallback = (_) => "chunk-signature=" ~ signature;
-            auto readChunk = (ulong numBytes) {
-                    auto bytes = buffer[0..numBytes];
-                    payload.read(bytes);
-                    auto chunk = SignableChunk(date,time,region,service,signature,hash(bytes));
-                    signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
-
-                    if (numBytes)
-                    {
-                        outputStream.write(bytes);
-                        outputStream.flush;
-                    }
-                    else
-                    {
-                        outputStream.finalize();
-                    }
-                };
-
-            ulong bytesLeft = payloadSize;
-            while(true)
+            outputStream.chunkExtensionCallback = (in ubyte[] data)
             {
-                readChunk(min(bytesLeft,blockSize));
-                if (bytesLeft > blockSize)
-                    bytesLeft -= blockSize;
-                else
-                    break;
-            }
-            readChunk(0);
+                auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
+                signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
+                return "chunk-signature=" ~ signature;
+            };
+            outputStream.write(payload);
+            outputStream.finalize;
         });
         checkForError(resp);
         return resp;
@@ -389,12 +366,13 @@ abstract class RESTClient {
         throw makeException(code, response.statusCode / 100 == 5, message);
     }
 
-    AWSException makeException(string type, bool retriable, string message)
+    AWSException makeException(string type, bool retriable, string message,
+        string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
         if (type == "UnrecognizedClientException" 
          || type == "InvalidSignatureException")            
-            throw new AuthorizationException(type, message);
-        return new AWSException(type, retriable, message);
+            throw new AuthorizationException(type, message, file, line, next);
+        return new AWSException(type, retriable, message, file, line, next);
     }
 }
 
