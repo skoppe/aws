@@ -5,7 +5,6 @@ import vibe.aws.credentials;
 import vibe.aws.s3;
 import std.process : environment;
 
-import core.sync.mutex;
 import std.array;
 
 shared static this()
@@ -24,7 +23,7 @@ shared static this()
     cfg.maxErrorRetry = 1;
     auto s3 = new S3(bucket,region,creds,cfg);
 
-    auto mutex = new Mutex;
+    auto mutex = new TaskMutex;
     auto condition = new TaskCondition(mutex);
     int runningTasks = 0;
 
@@ -103,6 +102,39 @@ shared static this()
 
     setTimer(1.seconds, {
         synchronized(mutex)
+            runningTasks++;
+
+        scope(exit)
+            synchronized(mutex)
+                if (--runningTasks == 0)
+                    condition.notify();
+
+        logInfo("Starting download information ...");
+        s3.info("test.txt", (scope resp) {
+            logInfo(resp.toString);
+            foreach(string key, val; resp.headers) {
+                logInfo("%s : %s", key, val);
+            }
+        });
+        logInfo("Download  information complete.");
+    });
+
+    setTimer(1.seconds, {
+        synchronized(mutex)
+            runningTasks++;
+
+        scope(exit)
+            synchronized(mutex)
+                if (--runningTasks == 0)
+                    condition.notify();
+
+        logInfo("Starting download...");
+        s3.download("test.txt", "test2.txt");
+        logInfo("Download complete.");
+    });
+
+    setTimer(1.seconds, {
+        synchronized(mutex)
             while(true)
             {
                 condition.wait();
@@ -114,4 +146,3 @@ shared static this()
             }
     });
 }
-
