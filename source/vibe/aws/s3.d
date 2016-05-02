@@ -268,7 +268,7 @@ class S3 : RESTClient
         typeof(HTTPClientResponse.headers) ret;
         download(resource, (scope HTTPClientResponse resp) {
             ret = resp.headers;
-            resp.readRawBody(del);
+            del(resp.bodyReader);
         }, queryParameters, headers);
         return ret;
     }
