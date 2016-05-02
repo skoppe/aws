@@ -33,9 +33,9 @@ class AWSException : Exception
     immutable string type;
     immutable bool retriable;
 
-    this(string type, bool retriable, string message)
+    this(string type, bool retriable, string message, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(type ~ ": " ~ message);
+        super(type ~ ": " ~ message, file, line, next);
         this.type = type;
         this.retriable = retriable;
     }
@@ -64,9 +64,9 @@ struct ClientConfiguration
  */
 class AuthorizationException : AWSException
 {
-    this(string type, string message)
+    this(string type, string message, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
-        super(type, false, message);
+        super(type, false, message, file, line, next);
     }
 }
 
@@ -389,12 +389,13 @@ abstract class RESTClient {
         throw makeException(code, response.statusCode / 100 == 5, message);
     }
 
-    AWSException makeException(string type, bool retriable, string message)
+    AWSException makeException(string type, bool retriable, string message,
+        string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
         if (type == "UnrecognizedClientException" 
          || type == "InvalidSignatureException")            
-            throw new AuthorizationException(type, message);
-        return new AWSException(type, retriable, message);
+            throw new AuthorizationException(type, message, file, line, next);
+        return new AWSException(type, retriable, message, file, line, next);
     }
 }
 
