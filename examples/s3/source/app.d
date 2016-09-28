@@ -17,6 +17,7 @@ shared static this()
     //to configure this example.
 
     auto creds = new EnvAWSCredentials;
+
     auto bucket = environment
         .get("S3_EXAMPLE_BUCKET")
         .enforce("S3_EXAMPLE_BUCKET environment variable is not defined.");
