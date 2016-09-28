@@ -58,22 +58,35 @@ class StaticAWSCredentials : AWSCredentialSource
     }
 }
 
+
+/// AWS Environment
+enum AwsEnvironment : string
+{
+    /// AWS_ACCESS_KEY_ID
+    idVariant0 = "AWS_ACCESS_KEY_ID",
+    /// AWS_ACCESS_KEY
+    idVariant1 = "AWS_ACCESS_KEY",
+    /// AWS_SECRET_KEY
+    secretVariant0 = "AWS_SECRET_KEY",
+    /// AWS_SECRET_ACCESS_KEY
+    secretVariant1 = "AWS_SECRET_ACCESS_KEY",
+}
+
 class EnvAWSCredentials : StaticAWSCredentials
 {
     this()
     {
-        enum id0 = "AWS_ACCESS_KEY_ID";
-        enum id1 = "AWS_ACCESS_KEY";
-        enum se0 = "AWS_SECRET_KEY";
-        enum se1 = "AWS_SECRET_ACCESS_KEY";
         import std.exception : enforce;
         import std.process : environment;
-        string accessKeyID     = environment
-            .get(id0, environment.get(id1))
-            .enforce(id0 ~ " or " ~ id1 ~ " environment variables should be defined.");
-        string accessKeySecret = environment
-            .get(se0, environment.get(se1))
-            .enforce(se0 ~ " or " ~ se1 ~ " environment variables should be defined.");
-        super(accessKeyID, accessKeySecret);
+        with(AwsEnvironment)
+        {
+            string accessKeyID     = environment
+                .get(idVariant0, environment.get(idVariant1))
+                .enforce(idVariant0 ~ " or " ~ idVariant1 ~ " environment variables should be defined.");
+            string accessKeySecret = environment
+                .get(secretVariant0, environment.get(secretVariant1))
+                .enforce(secretVariant0 ~ " or " ~ secretVariant1 ~ " environment variables should be defined.");
+            super(accessKeyID, accessKeySecret);
+        }
     }
 }
