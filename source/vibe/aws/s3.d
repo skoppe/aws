@@ -154,7 +154,8 @@ class S3 : RESTClient
     this(string bucket, string region, AWSCredentialSource credsSource, ClientConfiguration config = ClientConfiguration())
     {
         this.bucket = bucket;
-        super(bucket ~ (region ? ".s3-" ~ region ~ ".amazonaws.com" : ".s3.amazonaws.com"), region, "s3", credsSource, config);
+        enforce(region.length, "AWS region should be defined.");
+        super(bucket ~ ".s3-" ~ region ~ ".amazonaws.com", region, "s3", credsSource, config);
     }
 
     auto list(string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
