@@ -190,8 +190,8 @@ abstract class RESTClient {
                     resp.dropBody();
                     resp.destroy();
                 }
-
-            resp = requestHTTP("https://" ~ endpoint ~ resource ~ "?" ~ queryString, (scope HTTPClientRequest req) {
+            auto url = "https://" ~ endpoint ~ resource ~ "?" ~ queryString;
+            resp = requestHTTP(url, (scope HTTPClientRequest req) {
                 req.method = method;
                 
                 foreach(key, value; headers)
@@ -355,7 +355,7 @@ abstract class RESTClient {
         return readDocument(stringBuilder.data,true);
     }
 
-    void checkForError(HTTPClientResponse response)
+    void checkForError(HTTPClientResponse response, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
         if (response.statusCode < 400) 
             return; // No error
@@ -363,7 +363,8 @@ abstract class RESTClient {
         auto document = readXML(response);
         auto code = document.parseXPath("/Error/Code")[0].getCData;
         auto message = document.parseXPath("/Error/Message")[0].getCData;
-        throw makeException(code, response.statusCode / 100 == 5, message);
+        logError(message);
+        throw makeException(code, response.statusCode / 100 == 5, message, file, line, next);
     }
 
     AWSException makeException(string type, bool retriable, string message,
