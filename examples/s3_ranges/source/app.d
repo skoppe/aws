@@ -4,6 +4,7 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.s3;
 import std.process : environment;
+import std.exception : enforce;
 
 import std.array;
 import std.algorithm;
@@ -17,8 +18,13 @@ shared static this()
     //to configure this example.
 
     auto creds = new EnvAWSCredentials;
-    auto bucket = environment.get("S3_EXAMPLE_BUCKET");
-    auto region = environment.get("S3_EXAMPLE_REGION");
+
+    auto bucket = environment
+        .get("S3_EXAMPLE_BUCKET")
+        .enforce("S3_EXAMPLE_BUCKET environment variable is not defined.");
+    auto region = environment
+        .get("S3_EXAMPLE_REGION")
+        .enforce("S3_EXAMPLE_REGION environment variable is not defined.");
 
     auto cfg = ClientConfiguration();
     cfg.maxErrorRetry = 1;
