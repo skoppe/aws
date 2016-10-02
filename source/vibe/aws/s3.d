@@ -6,6 +6,9 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.sigv4;
 
+import std.typecons: Tuple;
+
+
 enum StorageClass: string
 {
     STANDARD = "STANDARD",
@@ -230,7 +233,74 @@ class S3 : RESTClient
         headers["Content-Type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        auto httpResp = doUpload(HTTPMethod.PUT, resource, headers, signedHeaders, input, chunkSize);
+        auto httpResp = doUpload(HTTPMethod.PUT, resource, null, headers, signedHeaders, input, chunkSize);
+        httpResp.dropBody();
+        httpResp.destroy();
+    }
+
+    string uploadPart(string resource, string id, size_t part, RandomAccessStream input, string contentType = "application/octet-stream", 
+                ulong chunkSize = 512*1024)
+    {
+        string[string] queryParameters = [
+            "partNumber": part.to!string,
+            "uploadId": id,
+        ];
+        InetHeaderMap headers;
+        headers["Content-Type"] = contentType;
+        auto httpResp = doUpload(HTTPMethod.PUT, resource, queryParameters, headers, null, input, chunkSize);
+        httpResp.dropBody();
+        auto etag = httpResp.headers["ETag"];
+        httpResp.destroy();
+        return etag;
+    }
+
+    string startMultipartUpload(string resource, string contentType = "application/octet-stream", 
+                StorageClass storageClass = StorageClass.STANDARD, SysTime expires = SysTime.init)
+    {
+        InetHeaderMap headers;
+        headers["Content-Type"] = contentType;
+        headers["x-amz-storage-class"] = storageClass.to!string;
+        string[] signedHeaders = ["x-amz-storage-class"];
+        if(expires != SysTime.init)
+        {
+            expires.fracSecs = expires.fracSecs.init;
+            headers["Expires"] = expires.toISOString; // HTTP format is different. So, we need to check if it is works.
+        }
+        auto httpResp = doRequest(HTTPMethod.POST, resource, null, headers);
+        scope(exit)
+        {
+            httpResp.dropBody();
+            httpResp.destroy();
+        }
+        auto document = readXML(httpResp);
+        auto id = document.parseXPath("/InitiateMultipartUploadResult/UploadId")[0].getCData;
+        return id;
+    }
+
+    void completeMultipartUpload(string resource, string id, in Tuple!(string, size_t)[] parts)
+    {
+        import std.format;
+        import std.array: appender;
+        auto app = appender!(char[]);
+        app.put(`<CompleteMultipartUpload>`);
+        FormatSpec!char fmt;
+        foreach(ref part; parts)
+        {
+            app.put(`<Part><PartNumber>`);
+            app.formatValue(part[1], fmt);
+            app.put(`</PartNumber><ETag>`);
+            app.put(part[0]);
+            app.put(`</ETag></Part>`);
+        }
+        app.put(`</CompleteMultipartUpload>`);
+        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploadId":id], InetHeaderMap.init, cast(ubyte[])app.data);
+        httpResp.dropBody();
+        httpResp.destroy();
+    }
+
+    void abortMultipartUpload(string resource, string id)
+    {
+        auto httpResp = doRequest(HTTPMethod.DELETE, resource, ["uploadId":id], InetHeaderMap.init);
         httpResp.dropBody();
         httpResp.destroy();
     }

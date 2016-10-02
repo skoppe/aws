@@ -169,7 +169,7 @@ abstract class RESTClient {
         return stringBuilder.data;
     }
 
-    HTTPClientResponse doRequest(HTTPMethod method, string resource, string[string] queryParameters, in InetHeaderMap headers)
+    HTTPClientResponse doRequest(HTTPMethod method, string resource, string[string] queryParameters, in InetHeaderMap headers, in ubyte[] reqBody = null)
     {
         if (!resource.startsWith("/"))
             resource = "/" ~ resource;
@@ -203,7 +203,7 @@ abstract class RESTClient {
                 req.headers["x-amz-content-sha256"] = sha256Of("").toHexString().toLower();
                 if (creds.sessionToken && !creds.sessionToken.empty)
                     req.headers["x-amz-security-token"] = creds.sessionToken;
-                signRequest(req, queryParameters, null, creds, timeString, region, service);
+                signRequest(req, queryParameters, reqBody, creds, timeString, region, service);
             });
             checkForError(resp);
             return resp;
@@ -211,7 +211,7 @@ abstract class RESTClient {
         assert(0);
     }
 
-    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, string[string] queryParameters,
                                 in InetHeaderMap headers, in string[] additionalSignedHeaders,
                                 scope RandomAccessStream payload, ulong blockSize = 512*1024)
     {
@@ -219,13 +219,13 @@ abstract class RESTClient {
         foreach(triesLeft; retries)
         {
             payload.seek(0);
-            return doUpload(method,resource,headers,additionalSignedHeaders,
-                            payload,payload.size,blockSize);
+            return doUpload(method, resource, queryParameters, headers, additionalSignedHeaders,
+                            payload, payload.size, blockSize);
         }
         assert(0);
     }
 
-    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, string[string] queryParameters,
                                 in InetHeaderMap headers, in string[] additionalSignedHeaders,
                                 scope InputStream payload, ulong payloadSize, ulong blockSize = 512*1024)
     {
@@ -255,7 +255,13 @@ abstract class RESTClient {
                 resp.destroy();
             }
 
-        resp = requestHTTP("https://" ~ endpoint ~ resource, (scope HTTPClientRequest req) {
+        auto url = "https://" ~ endpoint ~ resource;
+        if (queryParameters !is null)
+        {
+            url ~= "?" ~ buildQueryParameterString(queryParameters);
+        }
+
+        resp = requestHTTP(url, (scope HTTPClientRequest req) {
             req.method = method;
             
             //Initialize the headers
@@ -291,7 +297,7 @@ abstract class RESTClient {
             auto canonicalRequest = CanonicalRequest(
                     method.to!string,
                     resource,
-                    null,
+                    queryParameters,
                     [
                         "host":                         req.headers["host"],
                         "content-encoding":             req.headers["Content-Encoding"],
@@ -371,7 +377,7 @@ abstract class RESTClient {
         string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
         if (type == "UnrecognizedClientException" 
-         || type == "InvalidSignatureException")            
+         || type == "InvalidSignatureException")
             throw new AuthorizationException(type, message, file, line, next);
         return new AWSException(type, retriable, message, file, line, next);
     }
@@ -483,7 +489,7 @@ private auto currentTimeString()
 }
 
 private void signRequest(HTTPClientRequest req, string[string] queryParameters,
-                         ubyte[] requestBody, AWSCredentials creds, 
+                         in ubyte[] requestBody, AWSCredentials creds, 
                          string timeString, string region, string service)
 {
     auto dateString = dateFromISOString(timeString);
