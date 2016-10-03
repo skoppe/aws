@@ -203,9 +203,11 @@ abstract class RESTClient {
                 req.headers["host"] = endpoint;
                 auto timeString = currentTimeString();
                 req.headers["x-amz-date"] = timeString;
-                req.headers["x-amz-content-sha256"] = sha256Of("").toHexString().toLower();
+                req.headers["x-amz-content-sha256"] = sha256Of(reqBody).toHexString().toLower();
                 if (creds.sessionToken && !creds.sessionToken.empty)
                     req.headers["x-amz-security-token"] = creds.sessionToken;
+                if (reqBody)
+                    req.writeBody(reqBody);
                 signRequest(req, queryParameters, reqBody, creds, timeString, region, service);
             });
             checkForError(resp);
