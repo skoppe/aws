@@ -266,7 +266,7 @@ class S3 : RESTClient
             expires.fracSecs = expires.fracSecs.init;
             headers["Expires"] = expires.toISOString; // HTTP format is different. So, we need to check if it is works.
         }
-        auto httpResp = doRequest(HTTPMethod.POST, resource, null, headers);
+        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploads":null], headers);
         scope(exit)
         {
             httpResp.dropBody();

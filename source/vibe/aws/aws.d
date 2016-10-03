@@ -163,8 +163,11 @@ abstract class RESTClient {
                 stringBuilder.put("&");
 
             stringBuilder.put(urlEncode(parameter));
-            stringBuilder.put("=");
-            stringBuilder.put(urlEncode(value));
+            if(value)
+            {
+                stringBuilder.put("=");
+                stringBuilder.put(urlEncode(value));
+            }
         }
         return stringBuilder.data;
     }
