@@ -235,13 +235,13 @@ abstract class RESTClient {
                                 scope InputStream payload, ulong payloadSize, ulong blockSize = 512*1024)
     {
         //Calculate the body size upfront for the "Content-Length" header
-        auto base16 = (ulong x) { return ceil(log2(x)/4).to!ulong; };
+        auto base16 = (ulong x) => ceil(log2(x)/4).to!ulong;
         enum ulong signatureSize = ";chunk-signature=".length + 64;
-        immutable ulong numFullSizeBlocks = payloadSize/blockSize;
-        immutable ulong lastBlockSize = payloadSize - blockSize*numFullSizeBlocks;
+        immutable ulong numFullSizeBlocks = payloadSize / blockSize;
+        immutable ulong lastBlockSize = payloadSize % blockSize;
         
-        immutable ulong bodySize =  numFullSizeBlocks     *(base16(blockSize)     + signatureSize + 4 + blockSize) //Full-Sized blocks (4 = 2*"\r\n")
-                                 + (lastBlockSize ? 1 : 0)*(base16(lastBlockSize) + signatureSize + 4 + lastBlockSize) //Part-Sized last block
+        immutable ulong bodySize =  numFullSizeBlocks * (base16(blockSize)  + signatureSize + 4 + blockSize) //Full-Sized blocks (4 = 2*"\r\n")
+                                 + (lastBlockSize  ? (base16(lastBlockSize) + signatureSize + 4 + lastBlockSize) : 0) //Part-Sized last block
                                  + (1 + signatureSize + 4); //Finishing 0-sized block
 
 

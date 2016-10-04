@@ -6,7 +6,7 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.sigv4;
 
-import std.typecons: Tuple;
+import std.typecons: Tuple, tuple;
 
 
 enum StorageClass: string
@@ -227,7 +227,7 @@ class S3 : RESTClient
     }
 
     void upload(string resource, RandomAccessStream input, string contentType = "application/octet-stream", 
-                StorageClass storageClass = StorageClass.STANDARD, ulong chunkSize = 512*1024)
+                StorageClass storageClass = StorageClass.STANDARD, size_t chunkSize = 512*1024)
     {
         InetHeaderMap headers;
         headers["Content-Type"] = contentType;
@@ -238,8 +238,47 @@ class S3 : RESTClient
         httpResp.destroy();
     }
 
+    void multipartUpload(string resource, scope InputStream input, string contentType = "application/octet-stream",
+                StorageClass storageClass = StorageClass.STANDARD, SysTime expires = SysTime.init,
+                size_t chunkSize = 512*1024, size_t partSize = 5*1024*1024)
+    {
+        import std.array: appender, uninitializedArray;
+        import std.algorithm.comparison: min;
+        logTrace("multipartUpload for %s ...", resource);
+        enforce(partSize >= 5 * 1024 * 1024, "multipartUpload: minimal allowed part size is 5 MB.");
+        auto id = startMultipartUpload(resource, contentType, storageClass, expires);
+        scope(failure)
+            abortMultipartUpload(resource, id);
+
+        auto buf = uninitializedArray!(ubyte[])(partSize);
+        auto etags = appender!(Tuple!(string, size_t)[]);
+
+        size_t least = input.leastSize;
+        for(size_t part = 1;;part++)
+        {
+            size_t length;
+            do
+            {
+                auto newLength = least + length;
+                if(newLength > buf.length)
+                    newLength = buf.length;
+                input.read(buf[length .. newLength]);
+                length = newLength;
+                least = input.leastSize;
+            }
+            while(least && length < buf.length);
+            logTrace("multipartUpload: sending %s bytes for part %s ...", length, part);
+            auto etag = uploadPart(resource, id, part, new MemoryStream(buf[0 .. length], false), contentType, chunkSize);
+            etags.put(tuple(etag, part));
+            if(least == 0)
+                break;
+        }
+        enforce(etags.data, "At least one part should be uploaded.");
+        completeMultipartUpload(resource, id, etags.data);
+    }
+
     string uploadPart(string resource, string id, size_t part, RandomAccessStream input, string contentType = "application/octet-stream", 
-                ulong chunkSize = 512*1024)
+                size_t chunkSize = 512*1024)
     {
         string[string] queryParameters = [
             "partNumber": part.to!string,
