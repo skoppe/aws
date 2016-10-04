@@ -235,6 +235,7 @@ abstract class RESTClient {
                                 scope InputStream payload, ulong payloadSize, ulong blockSize = 512*1024)
     {
         //Calculate the body size upfront for the "Content-Length" header
+        logInfo("doUpload for resource %s", resource);
         auto base16 = (ulong x) => ceil(log2(x)/4).to!ulong;
         enum ulong signatureSize = ";chunk-signature=".length + 64;
         immutable ulong numFullSizeBlocks = payloadSize / blockSize;
@@ -336,12 +337,16 @@ abstract class RESTClient {
             auto signature = binarySignature.toHexString().toLower();
             outputStream.chunkExtensionCallback = (in ubyte[] data)
             {
+                logInfo("doUpload: chunkExtensionCallback data is %s bytes", data.length);
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
                 signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
                 return "chunk-signature=" ~ signature;
             };
+            logInfo("doUpload: write payload");
             outputStream.write(payload);
+            logInfo("doUpload: finalize ... ");
             outputStream.finalize;
+            logInfo("doUpload: finalized.");
         });
         checkForError(resp);
         return resp;
