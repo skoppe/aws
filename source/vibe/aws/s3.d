@@ -226,27 +226,40 @@ class S3 : RESTClient
         return result;
     }
 
-    void upload(string resource, RandomAccessStream input, string contentType = "application/octet-stream", 
-                StorageClass storageClass = StorageClass.STANDARD, size_t chunkSize = 512*1024)
+    void upload(
+        string resource,
+        RandomAccessStream input,
+        string contentType = "application/octet-stream",
+        StorageClass storageClass = StorageClass.STANDARD,
+        size_t chunkSize = 512*1024,
+        )
     {
         InetHeaderMap headers;
         headers["Content-Type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        auto httpResp = doUpload(HTTPMethod.PUT, resource, null, headers, signedHeaders, input, chunkSize);
+        auto httpResp = doUpload(HTTPMethod.PUT,
+            resource, null, headers, signedHeaders, input, chunkSize);
         httpResp.dropBody();
         httpResp.destroy();
     }
 
-    void multipartUpload(string resource, scope InputStream input, string contentType = "application/octet-stream",
-                StorageClass storageClass = StorageClass.STANDARD, SysTime expires = SysTime.init,
-                size_t chunkSize = 512*1024, size_t partSize = 5*1024*1024)
+    void multipartUpload(
+        string resource,
+        scope InputStream input,
+        InetHeaderMap headers = InetHeaderMap.init,
+        string contentType = "application/octet-stream",
+        StorageClass storageClass = StorageClass.STANDARD, 
+        SysTime expires = SysTime.init,
+        size_t chunkSize = 512*1024,
+        size_t partSize = 5*1024*1024,
+        )
     {
         import std.array: appender, uninitializedArray;
         import std.algorithm.comparison: min;
         logInfo("multipartUpload for %s ...", resource);
         enforce(partSize >= 5 * 1024 * 1024, "multipartUpload: minimal allowed part size is 5 MB.");
-        auto id = startMultipartUpload(resource, contentType, storageClass, expires);
+        auto id = startMultipartUpload(resource, headers, contentType, storageClass, expires);
         scope(failure)
             abortMultipartUpload(resource, id);
 
@@ -279,8 +292,14 @@ class S3 : RESTClient
         completeMultipartUpload(resource, id, etags.data);
     }
 
-    string uploadPart(string resource, string id, size_t part, RandomAccessStream input, string contentType = "application/octet-stream", 
-                size_t chunkSize = 512*1024)
+    string uploadPart(
+        string resource,
+        string id,
+        size_t part,
+        RandomAccessStream input,
+        string contentType = "application/octet-stream",
+        size_t chunkSize = 512*1024,
+        )
     {
         string[string] queryParameters = [
             "partNumber": part.to!string,
@@ -298,10 +317,14 @@ class S3 : RESTClient
         return etag;
     }
 
-    string startMultipartUpload(string resource, string contentType = "application/octet-stream", 
-                StorageClass storageClass = StorageClass.STANDARD, SysTime expires = SysTime.init)
+    string startMultipartUpload(
+        string resource,
+        InetHeaderMap headers = InetHeaderMap.init,
+        string contentType = "application/octet-stream", 
+        StorageClass storageClass = StorageClass.STANDARD,
+        SysTime expires = SysTime.init,
+        )
     {
-        InetHeaderMap headers;
         headers["Content-Type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
@@ -321,7 +344,12 @@ class S3 : RESTClient
         return id;
     }
 
-    void completeMultipartUpload(string resource, string id, in Tuple!(string, size_t)[] parts)
+    void completeMultipartUpload(
+        string resource,
+        string id,
+        in Tuple!(string, size_t)[] parts,
+        InetHeaderMap headers = InetHeaderMap.init,
+        )
     {
         import std.format;
         import std.array: appender;
@@ -337,7 +365,7 @@ class S3 : RESTClient
             app.put(`</ETag></Part>`);
         }
         app.put(`</CompleteMultipartUpload>`);
-        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploadId":id], InetHeaderMap.init, cast(ubyte[])app.data);
+        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploadId":id], headers, cast(ubyte[])app.data);
         httpResp.dropBody();
         httpResp.destroy();
     }
