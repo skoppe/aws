@@ -6,6 +6,9 @@ import vibe.aws.aws;
 import vibe.aws.credentials;
 import vibe.aws.sigv4;
 
+import std.typecons: Tuple, tuple;
+
+
 enum StorageClass: string
 {
     STANDARD = "STANDARD",
@@ -223,14 +226,153 @@ class S3 : RESTClient
         return result;
     }
 
-    void upload(string resource, RandomAccessStream input, string contentType = "application/octet-stream", 
-                StorageClass storageClass = StorageClass.STANDARD, ulong chunkSize = 512*1024)
+    void upload(
+        string resource,
+        RandomAccessStream input,
+        string contentType = "application/octet-stream",
+        StorageClass storageClass = StorageClass.STANDARD,
+        size_t chunkSize = 512*1024,
+        )
     {
         InetHeaderMap headers;
         headers["Content-Type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        auto httpResp = doUpload(HTTPMethod.PUT, resource, headers, signedHeaders, input, chunkSize);
+        auto httpResp = doUpload(HTTPMethod.PUT,
+            resource, null, headers, signedHeaders, input, chunkSize);
+        httpResp.dropBody();
+        httpResp.destroy();
+    }
+
+    void multipartUpload(
+        string resource,
+        scope InputStream input,
+        InetHeaderMap headers = InetHeaderMap.init,
+        string contentType = "application/octet-stream",
+        StorageClass storageClass = StorageClass.STANDARD, 
+        SysTime expires = SysTime.init,
+        size_t chunkSize = 512*1024,
+        size_t partSize = 5*1024*1024,
+        )
+    {
+        import std.array: appender, uninitializedArray;
+        import std.algorithm.comparison: min;
+        logInfo("multipartUpload for %s ...", resource);
+        enforce(partSize >= 5 * 1024 * 1024, "multipartUpload: minimal allowed part size is 5 MB.");
+        auto id = startMultipartUpload(resource, headers, contentType, storageClass, expires);
+        scope(failure)
+            abortMultipartUpload(resource, id);
+
+        auto buf = uninitializedArray!(ubyte[])(partSize);
+        auto etags = appender!(Tuple!(string, size_t)[]);
+
+        size_t least = input.leastSize;
+        for(size_t part = 1;;part++)
+        {
+            size_t length;
+            do
+            {
+                auto newLength = least + length;
+                if(newLength > buf.length)
+                    newLength = buf.length;
+                input.read(buf[length .. newLength]);
+                length = newLength;
+                least = input.leastSize;
+            }
+            while(least && length < buf.length);
+            logInfo("buf.length = %s", buf.length);
+            logInfo("least = %s", least);
+            logInfo("multipartUpload: sending %s bytes for part %s ...", length, part);
+            auto etag = uploadPart(resource, id, part, new MemoryStream(buf[0 .. length], false), contentType, chunkSize);
+            etags.put(tuple(etag, part));
+            if(least == 0)
+                break;
+        }
+        enforce(etags.data, "At least one part should be uploaded.");
+        completeMultipartUpload(resource, id, etags.data);
+    }
+
+    string uploadPart(
+        string resource,
+        string id,
+        size_t part,
+        RandomAccessStream input,
+        string contentType = "application/octet-stream",
+        size_t chunkSize = 512*1024,
+        )
+    {
+        string[string] queryParameters = [
+            "partNumber": part.to!string,
+            "uploadId": id,
+        ];
+        InetHeaderMap headers;
+        headers["Content-Type"] = contentType;
+        logInfo("uploadPart: doUpload ...");
+        auto httpResp = doUpload(HTTPMethod.PUT, resource, queryParameters, headers, null, input, chunkSize);
+        logInfo("uploadPart: doUpload finished.");
+        httpResp.dropBody();
+        auto etag = httpResp.headers["ETag"];
+        httpResp.destroy();
+        logInfo("uploadPart: finished.");
+        return etag;
+    }
+
+    string startMultipartUpload(
+        string resource,
+        InetHeaderMap headers = InetHeaderMap.init,
+        string contentType = "application/octet-stream", 
+        StorageClass storageClass = StorageClass.STANDARD,
+        SysTime expires = SysTime.init,
+        )
+    {
+        headers["Content-Type"] = contentType;
+        headers["x-amz-storage-class"] = storageClass.to!string;
+        string[] signedHeaders = ["x-amz-storage-class"];
+        if(expires != SysTime.init)
+        {
+            expires.fracSecs = expires.fracSecs.init;
+            headers["Expires"] = expires.toISOString; // HTTP format is different. So, we need to check if it is works.
+        }
+        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploads":null], headers);
+        scope(exit)
+        {
+            httpResp.dropBody();
+            httpResp.destroy();
+        }
+        auto document = readXML(httpResp);
+        auto id = document.parseXPath("/InitiateMultipartUploadResult/UploadId")[0].getCData;
+        return id;
+    }
+
+    void completeMultipartUpload(
+        string resource,
+        string id,
+        in Tuple!(string, size_t)[] parts,
+        InetHeaderMap headers = InetHeaderMap.init,
+        )
+    {
+        import std.format;
+        import std.array: appender;
+        auto app = appender!(char[]);
+        app.put(`<CompleteMultipartUpload>`);
+        FormatSpec!char fmt;
+        foreach(ref part; parts)
+        {
+            app.put(`<Part><PartNumber>`);
+            app.formatValue(part[1], fmt);
+            app.put(`</PartNumber><ETag>`);
+            app.put(part[0]);
+            app.put(`</ETag></Part>`);
+        }
+        app.put(`</CompleteMultipartUpload>`);
+        auto httpResp = doRequest(HTTPMethod.POST, resource, ["uploadId":id], headers, cast(ubyte[])app.data);
+        httpResp.dropBody();
+        httpResp.destroy();
+    }
+
+    void abortMultipartUpload(string resource, string id)
+    {
+        auto httpResp = doRequest(HTTPMethod.DELETE, resource, ["uploadId":id], InetHeaderMap.init);
         httpResp.dropBody();
         httpResp.destroy();
     }

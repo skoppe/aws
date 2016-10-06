@@ -163,13 +163,16 @@ abstract class RESTClient {
                 stringBuilder.put("&");
 
             stringBuilder.put(urlEncode(parameter));
-            stringBuilder.put("=");
-            stringBuilder.put(urlEncode(value));
+            if(value)
+            {
+                stringBuilder.put("=");
+                stringBuilder.put(urlEncode(value));
+            }
         }
         return stringBuilder.data;
     }
 
-    HTTPClientResponse doRequest(HTTPMethod method, string resource, string[string] queryParameters, in InetHeaderMap headers)
+    HTTPClientResponse doRequest(HTTPMethod method, string resource, string[string] queryParameters, in InetHeaderMap headers, in ubyte[] reqBody = null)
     {
         if (!resource.startsWith("/"))
             resource = "/" ~ resource;
@@ -200,10 +203,12 @@ abstract class RESTClient {
                 req.headers["host"] = endpoint;
                 auto timeString = currentTimeString();
                 req.headers["x-amz-date"] = timeString;
-                req.headers["x-amz-content-sha256"] = sha256Of("").toHexString().toLower();
+                req.headers["x-amz-content-sha256"] = sha256Of(reqBody).toHexString().toLower();
                 if (creds.sessionToken && !creds.sessionToken.empty)
                     req.headers["x-amz-security-token"] = creds.sessionToken;
-                signRequest(req, queryParameters, null, creds, timeString, region, service);
+                signRequest(req, queryParameters, reqBody, creds, timeString, region, service);
+                if (reqBody)
+                    req.writeBody(reqBody);
             });
             checkForError(resp);
             return resp;
@@ -211,7 +216,7 @@ abstract class RESTClient {
         assert(0);
     }
 
-    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, string[string] queryParameters,
                                 in InetHeaderMap headers, in string[] additionalSignedHeaders,
                                 scope RandomAccessStream payload, ulong blockSize = 512*1024)
     {
@@ -219,24 +224,25 @@ abstract class RESTClient {
         foreach(triesLeft; retries)
         {
             payload.seek(0);
-            return doUpload(method,resource,headers,additionalSignedHeaders,
-                            payload,payload.size,blockSize);
+            return doUpload(method, resource, queryParameters, headers, additionalSignedHeaders,
+                            payload, payload.size, blockSize);
         }
         assert(0);
     }
 
-    HTTPClientResponse doUpload(HTTPMethod method, string resource, 
+    HTTPClientResponse doUpload(HTTPMethod method, string resource, string[string] queryParameters,
                                 in InetHeaderMap headers, in string[] additionalSignedHeaders,
                                 scope InputStream payload, ulong payloadSize, ulong blockSize = 512*1024)
     {
         //Calculate the body size upfront for the "Content-Length" header
-        auto base16 = (ulong x) { return ceil(log2(x)/4).to!ulong; };
+        logInfo("doUpload for resource %s", resource);
+        auto base16 = (ulong x) => ceil(log2(x)/4).to!ulong;
         enum ulong signatureSize = ";chunk-signature=".length + 64;
-        immutable ulong numFullSizeBlocks = payloadSize/blockSize;
-        immutable ulong lastBlockSize = payloadSize - blockSize*numFullSizeBlocks;
+        immutable ulong numFullSizeBlocks = payloadSize / blockSize;
+        immutable ulong lastBlockSize = payloadSize % blockSize;
         
-        immutable ulong bodySize =  numFullSizeBlocks     *(base16(blockSize)     + signatureSize + 4 + blockSize) //Full-Sized blocks (4 = 2*"\r\n")
-                                 + (lastBlockSize ? 1 : 0)*(base16(lastBlockSize) + signatureSize + 4 + lastBlockSize) //Part-Sized last block
+        immutable ulong bodySize =  numFullSizeBlocks * (base16(blockSize)  + signatureSize + 4 + blockSize) //Full-Sized blocks (4 = 2*"\r\n")
+                                 + (lastBlockSize  ? (base16(lastBlockSize) + signatureSize + 4 + lastBlockSize) : 0) //Part-Sized last block
                                  + (1 + signatureSize + 4); //Finishing 0-sized block
 
 
@@ -255,7 +261,13 @@ abstract class RESTClient {
                 resp.destroy();
             }
 
-        resp = requestHTTP("https://" ~ endpoint ~ resource, (scope HTTPClientRequest req) {
+        auto url = "https://" ~ endpoint ~ resource;
+        if (queryParameters !is null)
+        {
+            url ~= "?" ~ buildQueryParameterString(queryParameters);
+        }
+
+        resp = requestHTTP(url, (scope HTTPClientRequest req) {
             req.method = method;
             
             //Initialize the headers
@@ -291,7 +303,7 @@ abstract class RESTClient {
             auto canonicalRequest = CanonicalRequest(
                     method.to!string,
                     resource,
-                    null,
+                    queryParameters,
                     [
                         "host":                         req.headers["host"],
                         "content-encoding":             req.headers["Content-Encoding"],
@@ -325,12 +337,16 @@ abstract class RESTClient {
             auto signature = binarySignature.toHexString().toLower();
             outputStream.chunkExtensionCallback = (in ubyte[] data)
             {
+                logInfo("doUpload: chunkExtensionCallback data is %s bytes", data.length);
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
                 signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
                 return "chunk-signature=" ~ signature;
             };
+            logInfo("doUpload: write payload");
             outputStream.write(payload);
+            logInfo("doUpload: finalize ... ");
             outputStream.finalize;
+            logInfo("doUpload: finalized.");
         });
         checkForError(resp);
         return resp;
@@ -371,7 +387,7 @@ abstract class RESTClient {
         string file = __FILE__, size_t line = __LINE__, Throwable next = null)
     {
         if (type == "UnrecognizedClientException" 
-         || type == "InvalidSignatureException")            
+         || type == "InvalidSignatureException")
             throw new AuthorizationException(type, message, file, line, next);
         return new AWSException(type, retriable, message, file, line, next);
     }
@@ -483,7 +499,7 @@ private auto currentTimeString()
 }
 
 private void signRequest(HTTPClientRequest req, string[string] queryParameters,
-                         ubyte[] requestBody, AWSCredentials creds, 
+                         in ubyte[] requestBody, AWSCredentials creds, 
                          string timeString, string region, string service)
 {
     auto dateString = dateFromISOString(timeString);

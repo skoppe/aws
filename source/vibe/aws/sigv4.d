@@ -19,7 +19,7 @@ struct CanonicalRequest
     string uri;
     string[string] queryParameters;
     string[string] headers;
-    ubyte[] payload;
+    const(ubyte)[] payload;
 }
 
 string canonicalQueryString(in string[string] queryParameters)
