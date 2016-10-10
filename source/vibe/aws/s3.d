@@ -257,7 +257,7 @@ class S3 : RESTClient
     {
         import std.array: appender, uninitializedArray;
         import std.algorithm.comparison: min;
-        logInfo("multipartUpload for %s ...", resource);
+        logDebug("multipartUpload for %s ...", resource);
         enforce(partSize >= 5 * 1024 * 1024, "multipartUpload: minimal allowed part size is 5 MB.");
         auto id = startMultipartUpload(resource, headers, contentType, storageClass, expires);
         scope(failure)
@@ -280,9 +280,9 @@ class S3 : RESTClient
                 least = input.leastSize;
             }
             while(least && length < buf.length);
-            logInfo("buf.length = %s", buf.length);
-            logInfo("least = %s", least);
-            logInfo("multipartUpload: sending %s bytes for part %s ...", length, part);
+            logDebug("buf.length = %s", buf.length);
+            logDebug("least = %s", least);
+            logDebug("multipartUpload: sending %s bytes for part %s ...", length, part);
             auto etag = uploadPart(resource, id, part, new MemoryStream(buf[0 .. length], false), contentType, chunkSize);
             etags.put(tuple(etag, part));
             if(least == 0)
@@ -307,13 +307,13 @@ class S3 : RESTClient
         ];
         InetHeaderMap headers;
         headers["Content-Type"] = contentType;
-        logInfo("uploadPart: doUpload ...");
+        logDebug("uploadPart: doUpload ...");
         auto httpResp = doUpload(HTTPMethod.PUT, resource, queryParameters, headers, null, input, chunkSize);
-        logInfo("uploadPart: doUpload finished.");
+        logDebug("uploadPart: doUpload finished.");
         httpResp.dropBody();
         auto etag = httpResp.headers["ETag"];
         httpResp.destroy();
-        logInfo("uploadPart: finished.");
+        logDebug("uploadPart: finished.");
         return etag;
     }
 
