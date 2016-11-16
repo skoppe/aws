@@ -8,7 +8,6 @@ import vibe.aws.sigv4;
 
 import std.typecons: Tuple, tuple;
 
-
 enum StorageClass: string
 {
     STANDARD = "STANDARD",
@@ -211,7 +210,8 @@ class S3 : RESTClient
             entry.lastModfied = node.parseXPath("LastModified")[0].getCData;
             entry.etag = node.parseXPath("ETag")[0].getCData;
             entry.size = node.parseXPath("Size")[0].getCData.to!ulong;
-            entry.storageClass = node.parseXPath("StorageClass")[0].getCData.toImpl!StorageClass;
+            import std.conv;
+            entry.storageClass = node.parseXPath("StorageClass")[0].getCData.to!StorageClass;
 
             result.resources.assumeSafeAppend ~= entry;
         }
