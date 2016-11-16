@@ -6,6 +6,7 @@ import std.digest.sha;
 import std.range;
 import std.stdio;
 import std.string;
+import std.uni;
 
 import vibe.textfilter.urlencode;
 
@@ -58,7 +59,8 @@ string signedHeaders(in string[string] headers)
 string hash(T)(T payload)
 {
     auto hash = sha256Of(payload);
-    return hash.toHexString().toLower();
+    string ret = hash.toHexString!(LetterCase.lower)();
+    return ret;
 }
 
 private string requestStringBase(in CanonicalRequest r)
