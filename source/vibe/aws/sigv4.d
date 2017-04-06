@@ -6,9 +6,8 @@ import std.digest.sha;
 import std.range;
 import std.stdio;
 import std.string;
-import std.uni;
 
-import vibe.textfilter.urlencode;
+static import vibe.textfilter.urlencode;
 
 
 immutable algorithm = "AWS4-HMAC-SHA256";
@@ -59,7 +58,7 @@ string signedHeaders(in string[string] headers)
 string hash(T)(T payload)
 {
     auto hash = sha256Of(payload);
-    string ret = hash.toHexString!(LetterCase.lower)();
+    string ret = hash.toHexString().toLower();
     return ret;
 }
 
