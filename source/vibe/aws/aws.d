@@ -203,7 +203,7 @@ abstract class RESTClient {
                 req.headers["host"] = endpoint;
                 auto timeString = currentTimeString();
                 req.headers["x-amz-date"] = timeString;
-                req.headers["x-amz-content-sha256"] = sha256Of(reqBody).toHexString!(LetterCase.lower);
+                req.headers["x-amz-content-sha256"] = sha256Of(reqBody).toHexString().toLower();
                 if (creds.sessionToken && !creds.sessionToken.empty)
                     req.headers["x-amz-security-token"] = creds.sessionToken;
                 signRequest(req, queryParameters, reqBody, creds, timeString, region, service);
@@ -334,12 +334,12 @@ abstract class RESTClient {
 //            auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
 //            enforce(outputStream !is null);
 
-            string signature = binarySignature.toHexString!(LetterCase.lower);
+            string signature = binarySignature.toHexString().toLower();
             outputStream.chunkExtensionCallback = (in ubyte[] data)
             {
                 logDebug("doUpload: chunkExtensionCallback data is %s bytes", data.length);
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
-                signature = key.sign(cast(ubyte[])chunk.signableString).toHexString!(LetterCase.lower);
+                signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
                 return "chunk-signature=" ~ signature;
             };
             logDebug("doUpload: write payload");
