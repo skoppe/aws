@@ -244,6 +244,9 @@ class S3 : RESTClient
         httpResp.destroy();
     }
 
+    /++
+    On_failure: aborts multipart upload.
+    +/
     void multipartUpload(
         string resource,
         scope InputStream input,
@@ -261,7 +264,17 @@ class S3 : RESTClient
         enforce(partSize >= 5 * 1024 * 1024, "multipartUpload: minimal allowed part size is 5 MB.");
         auto id = startMultipartUpload(resource, headers, contentType, storageClass, expires);
         scope(failure)
-            abortMultipartUpload(resource, id);
+        {
+            logWarn("aborting multipart upload for resource=%s, uploadId=%s", resource, id);
+            try
+            {
+                abortMultipartUpload(resource, id);
+            }
+            catch(Exception e)
+            {
+                logWarn(e.msg);
+            }
+        }
 
         auto buf = uninitializedArray!(ubyte[])(partSize);
         auto etags = appender!(Tuple!(string, size_t)[]);
