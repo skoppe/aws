@@ -1,6 +1,7 @@
 ﻿module vibe.aws.s3;
 
 import vibe.d;
+import vibe.core.stream;
 
 import vibe.aws.aws;
 import vibe.aws.credentials;
@@ -296,7 +297,7 @@ class S3 : RESTClient
             logDebug("buf.length = %s", buf.length);
             logDebug("least = %s", least);
             logDebug("multipartUpload: sending %s bytes for part %s ...", length, part);
-            auto etag = uploadPart(resource, id, part, new MemoryStream(buf[0 .. length], false), contentType, chunkSize);
+            auto etag = uploadPart(resource, id, part, createMemoryStream(buf[0 .. length], false), contentType, chunkSize);
             etags.put(tuple(etag, part));
             if(least == 0)
                 break;
@@ -418,7 +419,7 @@ class S3 : RESTClient
     Returns:
         Response headers list, which has type  DictionaryList!(string,false,12L,false)
     +/
-    auto download(string resource, scope void delegate(scope InputStream) del,
+    auto download(string resource, scope void delegate(scope InputStreamProxy) del,
                 string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
     {
         typeof(HTTPClientResponse.headers) ret;
@@ -430,10 +431,10 @@ class S3 : RESTClient
     }
 
     /// ditto
-    auto download(string resource, scope OutputStream stream,
+    auto download(OutputStream)(string resource, scope OutputStream stream,
                 string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
     {
-        return download(resource, (scope InputStream input) { stream.write(input); }, queryParameters, headers);
+        return download(resource, (scope InputStreamProxy input) { input.pipe(stream); }, queryParameters, headers);
     }
 
     /// ditto
