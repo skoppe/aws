@@ -12,6 +12,7 @@ import std.stdio;
 import std.string;
 import std.conv;
 
+import vibe.core.stream;
 import vibe.core.core;
 import vibe.core.log;
 import vibe.data.json;
@@ -329,21 +330,21 @@ abstract class RESTClient {
             req.headers["authorization"] = authHeader;
 
             //Write the data in chunks to the stream
-            auto outputStream = new ChunkedOutputStream(req.bodyWriter);
+            auto outputStream = createChunkedOutputStream(req.bodyWriter);
             outputStream.maxBufferSize = blockSize;
 //            auto outputStream = cast(ChunkedOutputStream) req.bodyWriter;
 //            enforce(outputStream !is null);
 
             string signature = binarySignature.toHexString().toLower();
-            outputStream.chunkExtensionCallback = (in ubyte[] data)
+            outputStream.chunkExtensionCallback = (in ubyte[] data) @safe
             {
                 logDebug("doUpload: chunkExtensionCallback data is %s bytes", data.length);
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
-                signature = key.sign(cast(ubyte[])chunk.signableString).toHexString().toLower();
+                signature = key.sign(chunk.signableString.representation).toHexString().toLower();
                 return "chunk-signature=" ~ signature;
             };
             logDebug("doUpload: write payload");
-            outputStream.write(payload);
+            payload.pipe(outputStream);
             logDebug("doUpload: finalize ... ");
             outputStream.finalize;
             logDebug("doUpload: finalized.");

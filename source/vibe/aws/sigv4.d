@@ -22,6 +22,7 @@ struct CanonicalRequest
     const(ubyte)[] payload;
 }
 
+@trusted pure
 string canonicalQueryString(in string[string] queryParameters)
 {
     alias encode = vibe.textfilter.urlencode.formEncode;
@@ -36,6 +37,7 @@ string canonicalQueryString(in string[string] queryParameters)
     return keys.map!(k => k ~ "=" ~ encoded[k]).join("&");
 }
 
+@trusted pure
 string canonicalHeaders(in string[string] headers)
 {
     string[string] trimmed;
@@ -48,6 +50,7 @@ string canonicalHeaders(in string[string] headers)
     return keys.map!(k => k ~ ":" ~ trimmed[k] ~ "\n").join("");
 }
 
+@trusted pure
 string signedHeaders(in string[string] headers)
 {
     string[] keys = headers.keys().map!(k => k.toLower()).array();
@@ -55,13 +58,13 @@ string signedHeaders(in string[string] headers)
     return keys.join(";");
 }
 
-string hash(T)(T payload)
+@safe pure
+string hash(in ubyte[] payload)
 {
-    auto hash = sha256Of(payload);
-    string ret = hash.toHexString().toLower();
-    return ret;
+    return sha256Of(payload)[].toHexString().toLower();
 }
 
+@safe pure
 private string requestStringBase(in CanonicalRequest r)
 {
     return 
@@ -72,13 +75,14 @@ private string requestStringBase(in CanonicalRequest r)
         signedHeaders(r.headers);
 }
 
+@safe pure
 string requestString(in CanonicalRequest r)
 {
-    return 
-        r.requestStringBase ~ "\n" ~
-        hash(r.payload);
+    return r.requestStringBase ~ "\n" ~
+        r.payload.hash;
 }
 
+@safe pure
 string streamingRequestString(in CanonicalRequest r)
 {
     return 
@@ -86,14 +90,16 @@ string streamingRequestString(in CanonicalRequest r)
         streaming_payload_hash;
 }
 
+@safe pure
 string makeCRSigV4(in CanonicalRequest r)
 {
-    return hash(r.requestString);
+    return r.requestString.representation.hash;
 }
 
+@safe pure
 string makeStreamingSigV4(in CanonicalRequest r)
 {
-    return hash(r.streamingRequestString);
+    return r.streamingRequestString.representation.hash;
 }
 
 unittest {
@@ -122,19 +128,19 @@ struct SignableRequest
     CanonicalRequest canonicalRequest;
 }
 
-private string signableStringBase(in SignableRequest r)
+private string signableStringBase(in SignableRequest r) @safe
 {
     return algorithm ~ "\n" ~
         r.dateString ~ "T" ~ r.timeStringUTC ~ "Z\n" ~
         r.dateString ~ "/" ~ r.region ~ "/" ~ r.service ~ "/aws4_request";
 }
 
-string signableString(in SignableRequest r) {
+string signableString(in SignableRequest r) @safe {
     return r.signableStringBase ~ "\n" ~
         r.canonicalRequest.makeCRSigV4;
 }
 
-string signableStringForStream(in SignableRequest r) {
+string signableStringForStream(in SignableRequest r) @safe {
     return r.signableStringBase ~ "\n" ~
         r.canonicalRequest.makeStreamingSigV4;
 }
@@ -165,23 +171,26 @@ unittest {
     assert(sampleString == signableString(r));
 }
 
-ubyte[] array_xor(ubyte[] b1, ubyte[] b2)
-{
-    assert(b1.length == b2.length);
-    ubyte[] ret;
-    for (uint i = 0; i < b1.length; i++)
-        ret ~= b1[i] ^ b2[i];
-    return ret;
+@safe pure nothrow @nogc
+auto hmac_sha256(in ubyte[] key, in ubyte[] message)
+in {
+    assert(key.length <= 64);
 }
-
-auto hmac_sha256(R)(ubyte[] key, R message)
-{
-    ubyte[] paddedKey = key[0..$];
-    while (paddedKey.length < 64) paddedKey ~= 0; // Pad to input block size of sha256
-    ubyte[] opad = (cast(ubyte)0x5c).repeat().take(64).array();
-    ubyte[] ipad = (cast(ubyte)0x36).repeat().take(64).array();
-
-    return sha256Of(array_xor(paddedKey, opad).chain(cast(ubyte[])sha256Of(array_xor(paddedKey, ipad).chain(message))));
+body {
+    assert(key.length <= 64);
+    SHA256 sha;
+    ubyte[64] pad = 0x36;
+    pad[0 .. key.length] ^= key[];
+    sha.put(pad);
+    sha.put(message);
+    auto hash = sha.finish;
+    sha.start;
+    pad[] = 0x5c;
+    pad[0 .. key.length] ^= key[];
+    sha.put(pad);
+    sha.put(hash);
+    hash = sha.finish;
+    return hash;
 }
 
 unittest {
@@ -256,9 +265,11 @@ unittest {
 
 struct SignableChunk
 {
-    @property static string emptyHash()
+    static immutable string emptyHash;
+
+    static this()
     {
-        return hash("");
+        emptyHash = hash([]);
     }
 
     string dateString;
@@ -270,7 +281,7 @@ struct SignableChunk
     string payloadHash;
 }
 
-string signableString(SignableChunk c) {
+string signableString(SignableChunk c) @safe {
     return algorithm ~ "-PAYLOAD\n" ~
         c.dateString ~ "T" ~ c.timeStringUTC ~ "Z\n" ~
         c.dateString ~ "/" ~ c.region ~ "/" ~ c.service ~ "/aws4_request\n" ~
