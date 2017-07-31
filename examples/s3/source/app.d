@@ -102,7 +102,8 @@ shared static this()
                     condition.notify();
 
         logInfo("Starting upload...");
-        s3.upload("test.txt", openFile("test.txt"), "text/plain");
+        import vibe.internal.interfaceproxy: asInterface;
+        s3.upload("test.txt", openFile("test.txt").asInterface!RandomAccessStream, "text/plain");
         logInfo("Upload complete.");
     });
 
