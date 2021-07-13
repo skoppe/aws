@@ -150,6 +150,13 @@ private mixin template _S3Common()
     }
 }
 
+import arsd.dom;
+auto safeInnerText(Element node) {
+  if (node is null)
+    return null;
+  return node.innerText;
+}
+
 class S3 : RESTClient
 {
     private string bucket;
@@ -171,6 +178,7 @@ class S3 : RESTClient
 
         InetHeaderMap headers;
         string[string] queryParameters;
+        queryParameters["list-type"] = "2";
 
         if (delimiter !is null)
             queryParameters["delimiter"] = delimiter;
@@ -179,7 +187,7 @@ class S3 : RESTClient
             queryParameters["prefix"] = prefix;
 
         if (marker !is null)
-            queryParameters["marker"] = marker;
+            queryParameters["continuation-token"] = marker;
 
         if (maxKeys)
             queryParameters["max-keys"] = maxKeys.to!string;
@@ -190,36 +198,38 @@ class S3 : RESTClient
         resp.destroy();
 
         BucketListResult result;
-        result.name = response.querySelector("ListBucketResult Name").innerText;
-        result.prefix = response.querySelector("ListBucketResult Prefix").innerText;
-        result.marker = response.querySelector("ListBucketResult Marker").innerText;
-        result.maxKeys = response.querySelector("ListBucketResult MaxKeys").innerText.to!uint;
-        result.isTruncated = response.querySelector("ListBucketResult IsTruncated").innerText.toLower.to!bool;
+        result.name = response.querySelector("listbucketresult name").safeInnerText;
+        result.prefix = response.querySelector("listbucketresult prefix").safeInnerText;
+        result.marker = response.querySelector("listbucketresult marker").safeInnerText;
+        result.maxKeys = response.querySelector("listbucketresult maxKeys").safeInnerText.to!uint;
+        result.isTruncated = response.querySelector("listbucketresult istruncated").safeInnerText.toLower.to!bool;
 
         if (result.isTruncated)
-            result.nextMarker = response.querySelector("ListBucketResult NextMarker").innerText;
+            result.nextMarker = response.querySelector("listbucketresult nextcontinuationtoken").safeInnerText;
 
-        auto entries = response.querySelector("ListBucketResult Contents");
+        auto entries = response.querySelectorAll("listbucketresult contents");
 
-        result.resources.reserve = 1000;
-        foreach(node; entries.children)
-        {
-            BucketListResult.S3Resource entry;
-            BucketListResult.S3Resource.Owner owner;
+        if (entries) {
+          result.resources.reserve = 1000;
+          foreach(node; entries)
+            {
+              BucketListResult.S3Resource entry;
+              BucketListResult.S3Resource.Owner owner;
 
-            entry.key = node.querySelector("Key").innerText;
-            entry.lastModfied = node.querySelector("LastModified").innerText;
-            entry.etag = node.querySelector("ETag").innerText;
-            entry.size = node.querySelector("Size").innerText.to!ulong;
-            import std.conv;
-            entry.storageClass = node.querySelector("StorageClass")[0].innerText.to!StorageClass;
+              entry.key = node.querySelector("key").safeInnerText;
+              entry.lastModfied = node.querySelector("lastModified").safeInnerText;
+              entry.etag = node.querySelector("etag").safeInnerText;
+              entry.size = node.querySelector("size").safeInnerText.to!ulong;
+              import std.conv;
+              entry.storageClass = node.querySelector("storageclass").safeInnerText.to!StorageClass;
 
-            result.resources.assumeSafeAppend ~= entry;
+              result.resources.assumeSafeAppend ~= entry;
+            }
+          result.resources.reserve = result.resources.length;
         }
-        result.resources.reserve = result.resources.length;
 
+        auto prefixes = response.querySelectorAll("listbucketresult commonprefixes prefix");
         result.commonPrefixes.reserve = 1000;
-        auto prefixes = response.querySelectorAll("ListBucketResult CommonPrefixes Prefix");
         foreach(node; prefixes)
             result.commonPrefixes.assumeSafeAppend ~= node.innerText;
         result.commonPrefixes.reserve = result.commonPrefixes.length;
@@ -354,7 +364,7 @@ class S3 : RESTClient
             httpResp.destroy();
         }
         auto document = readXML(httpResp);
-        auto id = document.querySelector("InitiateMultipartUploadResult UploadId").innerText;
+        auto id = document.querySelector("InitiateMultipartUploadResult UploadId").safeInnerText;
         return id;
     }
 
