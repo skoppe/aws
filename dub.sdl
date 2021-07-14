@@ -14,5 +14,14 @@ configuration "unittest" {
 	targetName "ut"
 	mainSourceFile "test/ut/ut_runner.d"
 	sourcePaths "source" "test/ut"
-	importPaths "source" "test"
+	importPaths "source" "test/ut"
+}
+# to run integration tests, start docker-compose up and run dub -c it -b unittest
+configuration "it" {
+	dependency "unit-threaded" version=">=0.0.0"
+	targetType "executable"
+	targetName "it"
+	mainSourceFile "test/it/it_runner.d"
+	sourcePaths "source" "test/it"
+	importPaths "source" "test/it"
 }
