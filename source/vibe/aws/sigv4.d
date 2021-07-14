@@ -7,13 +7,10 @@ import std.range;
 import std.stdio;
 import std.string;
 
-static import vibe.textfilter.urlencode;
-
-
 immutable algorithm = "AWS4-HMAC-SHA256";
 immutable streaming_payload_hash = "STREAMING-" ~ algorithm ~ "-PAYLOAD";
 
-struct CanonicalRequest 
+struct CanonicalRequest
 {
     string method;
     string uri;
@@ -25,12 +22,12 @@ struct CanonicalRequest
 @trusted pure
 string canonicalQueryString(in string[string] queryParameters)
 {
-    alias encode = vibe.textfilter.urlencode.formEncode;
+    import std.uri : encodeComponent;
 
     string[string] encoded;
     foreach (p; queryParameters.keys()) 
     {
-        encoded[encode(p)] = encode(queryParameters[p]);
+        encoded[encodeComponent(p)] = encodeComponent(queryParameters[p]);
     }
     string[] keys = encoded.keys();
     sort(keys);
@@ -43,7 +40,7 @@ string canonicalHeaders(in string[string] headers)
     string[string] trimmed;
     foreach (h; headers.keys())
     {
-        trimmed[h.toLower().strip()] = headers[h].strip();
+        trimmed[h.toLower().strip()] = headers[h].strip(); // TODO: should convert sequential spaces in the header value to a single space
     }
     string[] keys = trimmed.keys();
     sort(keys);
@@ -216,6 +213,25 @@ unittest {
     
     ubyte[] expected = [152, 241, 216, 137, 254, 196, 244, 66, 26, 220, 82, 43, 171, 12, 225, 248, 46, 105, 41, 194, 98, 237, 21, 229, 169, 76, 144, 239, 209, 227, 176, 231 ];
     assert(expected == signKey);
+}
+
+unittest {
+    // import unit_threaded;
+    string secretKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
+    auto signKey = signingKey(secretKey, "20150830", "us-east-1", "iam");
+    assert(signKey.toHexString().toLower == "c4afb1cc5771d871763a393e44b703571b55cc28424d1a5e86da6ed3c154a4b9");
+}
+
+unittest {
+    auto sampleString = "AWS4-HMAC-SHA256\n"~
+        "20150830T123600Z\n"~
+        "20150830/us-east-1/iam/aws4_request\n"~
+        "f536975d06c0309214f805bb90ccff089219ecd68b2577efef23edd43b7e1a59";
+
+    string secretKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
+    auto signKey = signingKey(secretKey, "20150830", "us-east-1", "iam");
+    auto signature = hmac_sha256(signKey, cast(ubyte[])sampleString).toHexString().toLower();
+    assert(signature == "5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7");
 }
 
 alias sign = hmac_sha256;
