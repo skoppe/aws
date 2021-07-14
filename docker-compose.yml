@@ -13,11 +13,3 @@ services:
       - '4571:4571'
     volumes: 
       - "/var/run/docker.sock:/var/run/docker.sock"
-  bucket:
-    image: amazon/aws-cli
-    environment:
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-    depends_on:
-      - localstack
-    command: --endpoint-url=http://localstack:4566 s3 mb s3://bucket

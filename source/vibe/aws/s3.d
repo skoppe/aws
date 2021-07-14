@@ -158,10 +158,15 @@ import arsd.dom;
 
 class S3 : RESTClient
 {
-    // import vibe.d : RandomAccessStream, InputStream, InetHeaderMap, InputStreamProxy, HTTPClientResponse, SysTime;
-
     this(string endpoint, string region, AWSCredentialSource credsSource, ClientConfiguration config = ClientConfiguration()) {
         super(endpoint, region, "s3", credsSource, config);
+    }
+
+    auto createBucket(string bucket) {
+        string[string] headers;
+        string[] signedHeaders = null;
+        ubyte[] input = null;
+        doUpload("PUT", bucket, null, headers, signedHeaders, input, 1024);
     }
 
     auto list2(string bucket, string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
