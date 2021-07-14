@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+
+jobs:
+  tests:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install D compiler
+        uses: mihails-strasuns/setup-dlang@v1.0.5
+        with:
+          compiler: ${{ matrix.dc }}
+
+      - uses: actions/cache@v1
+        with:
+          path: ~/.dub
+          key: ${{ runner.os }}-dub-${{ hashFiles('**/dub.selections.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dub-
+
+      - name: Start containers
+        run: docker-compose -f "docker-compose.yml" up -d --build
+
+      - name: Test
+        run: |
+          dub -c it -b unittest
+
+      - name: Integration Test
+        run: |
+          dub -c it -b unittest
+
+      - name: Stop containers
+        if: always()
+        run: docker-compose -f "docker-compose.yml" down
