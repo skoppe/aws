@@ -4,7 +4,6 @@ authors "Rico Huijbers" "Yannick Koechlin" "Manuel Frischknecht" "Ilya Yaroshenk
 copyright "Copyright © 2015, see Authors"
 license "MIT"
 dependency "requests" version="~>2.0.0"
-dependency "memutils" version="~>0.4.7"
 dependency "arsd-official:dom" version="~>2.0.0"
 targetType "sourceLibrary"
 

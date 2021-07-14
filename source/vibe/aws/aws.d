@@ -16,7 +16,6 @@ import std.digest.sha;
 import vibe.aws.sigv4;
 import std.math;
 
-static import memutils.all;
 import arsd.dom;
 
 public import vibe.aws.credentials;

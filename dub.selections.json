@@ -3,7 +3,6 @@
 	"versions": {
 		"arsd-official": "2.0.0",
 		"cachetools": "0.3.1",
-		"memutils": "0.4.13",
 		"requests": "2.0.0",
 		"unit-threaded": "2.0.0"
 	}

@@ -168,7 +168,6 @@ class S3 : RESTClient
     {
         assert(maxKeys <= 1000);
 
-        import memutils.all;
         import std.stdio;
         import std.conv;
 
