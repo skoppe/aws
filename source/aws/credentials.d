@@ -1,4 +1,4 @@
-module vibe.aws.credentials;
+module aws.credentials;
 
 /**
   AWS Credentials

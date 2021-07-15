@@ -1,19 +1,50 @@
-vibe-s3
+# AWS Client
 ========
 
-### this library is highly alpha and mostly untested. use at your own risk
+Client for AWS services. Currently only supports S3.
 
-see example dub projects for usage
+## Usage
 
-to run the example you need to export your credentials:
+```dlang
+import aws.s3;
+import aws.aws;
+import aws.credentials;
+import std.algorithm : joiner;
+import std.array : array;
 
-```bash
-export AWS_ACCESS_KEY_ID=XXX
-export AWS_SECRET_KEY=XXX
-export S3_EXAMPLE_BUCKET=myTestBucket
-export S3_EXAMPLE_REGION=eu-west-1
+void main() {
+    import std.array : appender;
+    import std.stdio;
+    auto creds = new StaticAWSCredentials("test", "test");
+
+    auto region = "us-east-1";
+    auto endpoint = "http://localhost:4566";
+    auto s3 = new S3(endpoint,region,creds);
+
+    s3.createBucket("test-bucket");
+    s3.upload("test-bucket", "myfile", cast(ubyte[])[48,49,50,51,52,53]);
+    s3.download("test-bucket", "myfile").receiveAsRange.joiner().array().writeln();
+    auto directories = appender!string;
+    auto files = appender!string;
+
+    string marker = null;
+    while(true)
+        {
+            auto result = s3.list("test-bucket", "/", null,marker,100);
+            foreach(directory; result.commonPrefixes)
+                directories.put(directory~"\n");
+
+            foreach(file; result.resources)
+                files.put(file.key~"\n");
+
+            if (result.isTruncated)
+                marker = result.nextMarker;
+            else
+                break;
+        }
+
+
+    writeln(directories);
+    writeln(files);
+}
 ```
-
-Note for OS X: 
-you need to force use Homebrews OpenSSL
-`brew link --force openssl`

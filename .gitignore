@@ -6,11 +6,9 @@ __dummy.html
 *.obj
 __test__library__
 
-examples/s3/test-aws-s3
-
 *.sublime-project
 
 untitled.sublime-workspace
 
-vibe-s3-test-library
-examples/s3_ranges/test-aws-s3
+/it
+/ut

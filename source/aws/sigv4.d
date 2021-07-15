@@ -1,4 +1,4 @@
-module vibe.aws.sigv4;
+module aws.sigv4;
 
 import std.array;
 import std.algorithm;

@@ -1,36 +1,33 @@
-import vibe.aws.s3;
-import vibe.aws.aws;
-import vibe.aws.credentials;
+import aws.s3;
+import aws.aws;
+import aws.credentials;
 
 
 unittest {
     import std.array : appender;
     import std.stdio;
+    import std.algorithm : joiner;
+    import std.array : array;
     auto creds = new StaticAWSCredentials("test", "test");
 
     auto region = "us-east-1";
     // auto region = "ams3";
 
-    auto cfg = ClientConfiguration();
     // auto endpoint = "https://ams3.digitaloceanspaces.com";
     auto endpoint = "http://localhost:4566";
-    cfg.maxErrorRetry = 1;
-    auto s3 = new S3(endpoint,region,creds,cfg);
+    auto s3 = new S3(endpoint,region,creds);
 
     s3.createBucket("test-bucket");
-    s3.upload2("test-bucket", "myfile", cast(ubyte[])[48,49,50,51,52,53]);
+    s3.upload("test-bucket", "myfile", cast(ubyte[])[48,49,50,51,52,53]);
+    s3.download("test-bucket", "myfile").receiveAsRange.joiner().array().writeln();
 
-
-    import std.algorithm : joiner;
-    import std.array : array;
-    s3.download2("test-bucket", "myfile").receiveAsRange.joiner().array().writeln();
     auto directories = appender!string;
     auto files = appender!string;
 
     string marker = null;
     while(true)
         {
-            auto result = s3.list2("test-bucket", "/", null,marker,100);
+            auto result = s3.list("test-bucket", "/", null,marker,100);
             foreach(directory; result.commonPrefixes)
                 directories.put(directory~"\n");
 

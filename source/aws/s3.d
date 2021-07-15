@@ -1,8 +1,8 @@
-﻿module vibe.aws.s3;
+﻿module aws.s3;
 
-import vibe.aws.aws;
-import vibe.aws.credentials;
-import vibe.aws.sigv4;
+import aws.aws;
+import aws.credentials;
+import aws.sigv4;
 
 import std.typecons: Tuple, tuple;
 import std.string : toLower;
@@ -158,8 +158,8 @@ import arsd.dom;
 
 class S3 : RESTClient
 {
-    this(string endpoint, string region, AWSCredentialSource credsSource, ClientConfiguration config = ClientConfiguration()) {
-        super(endpoint, region, "s3", credsSource, config);
+    this(string endpoint, string region, AWSCredentialSource credsSource) {
+        super(endpoint, region, "s3", credsSource);
     }
 
     auto createBucket(string bucket) {
@@ -169,7 +169,7 @@ class S3 : RESTClient
         doUpload("PUT", bucket, null, headers, signedHeaders, input, 1024);
     }
 
-    auto list2(string bucket, string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
+    auto list(string bucket, string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
     {
         assert(maxKeys <= 1000);
 
@@ -193,11 +193,11 @@ class S3 : RESTClient
         if (marker !is null)
             queryParameters["continuation-token"] = marker;
 
-        // if (maxKeys)
-        //     queryParameters["max-keys"] = maxKeys.to!string;
+        if (maxKeys)
+            queryParameters["max-keys"] = maxKeys.to!string;
 
         auto resp = doRequest("GET", bucket~"/", queryParameters, headers);
-        auto response = readXML2(resp);
+        auto response = readXML(resp);
 
         BucketListResult result;
         result.name = response.querySelector("listbucketresult name").safeInnerText;
@@ -238,77 +238,8 @@ class S3 : RESTClient
 
         return result;
     }
-    // auto list(string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
-    // {
-    //     import vibe.d : HTTPMethod;
-    //     assert(maxKeys <= 1000);
 
-    //     import memutils.all;
-    //     import std.stdio;
-    //     import std.conv;
-
-    //     InetHeaderMap headers;
-    //     string[string] queryParameters;
-    //     queryParameters["list-type"] = "2";
-
-    //     if (delimiter !is null)
-    //         queryParameters["delimiter"] = delimiter;
-
-    //     if (prefix !is null)
-    //         queryParameters["prefix"] = prefix;
-
-    //     if (marker !is null)
-    //         queryParameters["continuation-token"] = marker;
-
-    //     if (maxKeys)
-    //         queryParameters["max-keys"] = maxKeys.to!string;
-
-    //     auto resp = doRequest(HTTPMethod.GET, "/", queryParameters, headers);
-    //     auto response = readXML(resp);
-    //     resp.dropBody();
-    //     resp.destroy();
-
-    //     BucketListResult result;
-    //     result.name = response.querySelector("listbucketresult name").safeInnerText;
-    //     result.prefix = response.querySelector("listbucketresult prefix").safeInnerText;
-    //     result.marker = response.querySelector("listbucketresult marker").safeInnerText;
-    //     result.maxKeys = response.querySelector("listbucketresult maxKeys").safeInnerText.to!uint;
-    //     result.isTruncated = response.querySelector("listbucketresult istruncated").safeInnerText.toLower.to!bool;
-
-    //     if (result.isTruncated)
-    //         result.nextMarker = response.querySelector("listbucketresult nextcontinuationtoken").safeInnerText;
-
-    //     auto entries = response.querySelectorAll("listbucketresult contents");
-
-    //     if (entries) {
-    //       result.resources.reserve = 1000;
-    //       foreach(node; entries)
-    //         {
-    //           BucketListResult.S3Resource entry;
-    //           BucketListResult.S3Resource.Owner owner;
-
-    //           entry.key = node.querySelector("key").safeInnerText;
-    //           entry.lastModfied = node.querySelector("lastModified").safeInnerText;
-    //           entry.etag = node.querySelector("etag").safeInnerText;
-    //           entry.size = node.querySelector("size").safeInnerText.to!ulong;
-    //           import std.conv;
-    //           entry.storageClass = node.querySelector("storageclass").safeInnerText.to!StorageClass;
-
-    //           result.resources.assumeSafeAppend ~= entry;
-    //         }
-    //       result.resources.reserve = result.resources.length;
-    //     }
-
-    //     auto prefixes = response.querySelectorAll("listbucketresult commonprefixes prefix");
-    //     result.commonPrefixes.reserve = 1000;
-    //     foreach(node; prefixes)
-    //         result.commonPrefixes.assumeSafeAppend ~= node.innerText;
-    //     result.commonPrefixes.reserve = result.commonPrefixes.length;
-
-    //     return result;
-    // }
-
-    void upload2(InputStream)(
+    void upload(InputStream)(
                               string bucket,
                 string resource,
                 InputStream input,
@@ -322,50 +253,15 @@ class S3 : RESTClient
         headers["content-type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        // auto httpResp =
-            doUpload("PUT",
-                                 bucket~"/"~resource, null, headers, signedHeaders, input, chunkSize);
-        // httpResp.dropBody();
-        // httpResp.destroy();
+        doUpload("PUT", bucket~"/"~resource, null, headers, signedHeaders, input, chunkSize);
     }
 
-    auto download2(string bucket, string resource,
+    auto download(string bucket, string resource,
                   string[string] queryParameters = null, string[string] headers = null)
     {
         return doRequest("GET", bucket~"/"~resource, queryParameters, headers);
     }
-    /+void upload(
-        string resource,
-        RandomAccessStream input,
-        string contentType = "application/octet-stream",
-        StorageClass storageClass = StorageClass.STANDARD,
-        size_t chunkSize = 512*1024,
-        )
-    {
-        import vibe.d : HTTPMethod;
-        import std.conv : to;
-        InetHeaderMap headers;
-        headers["Content-Type"] = contentType;
-        headers["x-amz-storage-class"] = storageClass.to!string;
-        string[] signedHeaders = ["x-amz-storage-class"];
-        auto httpResp = doUpload(HTTPMethod.PUT,
-            resource, null, headers, signedHeaders, input, chunkSize);
-        httpResp.dropBody();
-        httpResp.destroy();
-    }+/
 
-    // void download(string resource, scope void delegate(scope HTTPClientResponse) del,
-    //               string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
-    // {
-    //     import vibe.d : HTTPMethod;
-    //     auto httpResp = doRequest(HTTPMethod.GET, resource, queryParameters, headers);
-    //     scope(exit)
-    //         {
-    //             httpResp.dropBody();
-    //             httpResp.destroy();
-    //         }
-    //     del(httpResp);
-    // }
 /+
     /++
     On_failure: aborts multipart upload.
@@ -532,41 +428,6 @@ class S3 : RESTClient
             httpResp.destroy();
         }
         del(httpResp);
-    }
-
-    /++
-    Returns:
-        Response headers list, which has type  DictionaryList!(string,false,12L,false)
-    +/
-    auto download(string resource, scope void delegate(scope InputStreamProxy) del,
-                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
-    {
-        import vibe.d : HTTPClientResponse;
-        typeof(HTTPClientResponse.headers) ret;
-        download(resource, (scope HTTPClientResponse resp) {
-            ret = resp.headers;
-            del(resp.bodyReader);
-        }, queryParameters, headers);
-        return ret;
-    }
-
-    /// ditto
-    auto download(OutputStream)(string resource, scope OutputStream stream,
-                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
-    {
-        import vibe.d : pipe;
-        return download(resource, (scope InputStreamProxy input) { input.pipe(stream); }, queryParameters, headers);
-    }
-
-    /// ditto
-    auto download(string resource, string saveTo,
-                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
-    {
-        import vibe.d : openFile, FileMode;
-        auto file = openFile(saveTo, FileMode.createTrunc);
-        scope(exit)
-            file.close();
-        return download(resource, file, queryParameters, headers);
     }
     +/
 }
