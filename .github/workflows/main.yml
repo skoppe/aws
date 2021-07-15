@@ -33,7 +33,7 @@ jobs:
 
       - name: Test
         run: |
-          dub -c it -b unittest
+          dub test
 
       - name: Integration Test
         run: |
