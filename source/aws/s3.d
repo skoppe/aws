@@ -267,6 +267,12 @@ class S3 : RESTClient
         return resp;
     }
 
+    auto info(string bucket, string resource, string[string] queryParameters = null, string[string] headers = null)
+    {
+        auto resp = doRequest("HEAD", bucket~"/"~resource, queryParameters, headers);
+        checkForError(resp);
+        return resp.responseHeaders;
+    }
 /+
     /++
     On_failure: aborts multipart upload.
@@ -422,17 +428,5 @@ class S3 : RESTClient
         httpResp.destroy();
     }
 
-    void info(string resource, scope void delegate(scope HTTPClientResponse) del,
-                string[string] queryParameters = null, InetHeaderMap headers = InetHeaderMap.init)
-    {
-        import vibe.d : HTTPMethod;
-        auto httpResp = doRequest(HTTPMethod.HEAD, resource, queryParameters, headers);
-        scope(exit)
-        {
-            httpResp.dropBody();
-            httpResp.destroy();
-        }
-        del(httpResp);
-    }
     +/
 }
