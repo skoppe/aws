@@ -123,8 +123,13 @@ abstract class RESTClient {
     Response doUpload(Range)(string method, string resource, string[string] queryParameters,
                              string[string] headers, in string[] additionalSignedHeaders,
                              scope Range payload, ulong blockSize = 512*1024) if (isInputRange!Range && hasLength!Range) {
+        return doUpload(method, resource, queryParameters, headers, additionalSignedHeaders, payload, payload.length, blockSize);
+    }
+
+    Response doUpload(Range)(string method, string resource, string[string] queryParameters,
+                             string[string] headers, in string[] additionalSignedHeaders,
+                             scope Range payload, size_t payloadSize, ulong blockSize = 512*1024) if (isInputRange!Range) {
         import requests : Request;
-        size_t payloadSize = payload.length;
 
         //Calculate the body size upfront for the "Content-Length" header
         auto base16 = (ulong x) => ceil(log2(x)/4).to!ulong;
@@ -285,20 +290,27 @@ private string[string] signRequest2(string uri, string method, string[string] he
     return newHeaders;
 }
 
-struct ChunkedContent(Range) if (is(ElementType!Range == ubyte)) {
+struct ChunkedContent(Range) if (is(ElementType!Range == ubyte) || is(ElementType!Range == ubyte[])) {
     enum Position {
         data,
         finalizer,
         end
     }
-    import std.range : chunks;
-    Chunks!Range range;
+    static if (is(ElementType!Range == ubyte)) {
+        import std.range : chunks, Chunks;
+        Chunks!Range range;
+    } else {
+        Range range;
+    }
     alias ExtensionCallback = string delegate(ubyte[]);
     ExtensionCallback extension;
     static ubyte[] delimiter = ['\r','\n'];
     Position pos;
     this(Range range, size_t chunkSize, ExtensionCallback cb) {
-        this.range = range.chunks(chunkSize);
+        static if (is(ElementType!Range == ubyte)) {
+            this.range = range.chunks(chunkSize);
+        } else
+            this.range = range;
         this.extension = cb;
         pos = range.empty ? Position.finalizer : Position.data;
     }
