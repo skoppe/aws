@@ -166,7 +166,8 @@ class S3 : RESTClient
         string[string] headers;
         string[] signedHeaders = null;
         ubyte[] input = null;
-        doUpload("PUT", bucket, null, headers, signedHeaders, input, 1024);
+        auto resp = doUpload("PUT", bucket, null, headers, signedHeaders, input, 1024);
+        checkForError(resp);
     }
 
     auto list(string bucket, string delimiter = null, string prefix = null, string marker = null, uint maxKeys = 0)
@@ -197,6 +198,7 @@ class S3 : RESTClient
             queryParameters["max-keys"] = maxKeys.to!string;
 
         auto resp = doRequest("GET", bucket~"/", queryParameters, headers);
+        checkForError(resp);
         auto response = readXML(resp);
 
         BucketListResult result;
@@ -253,13 +255,16 @@ class S3 : RESTClient
         headers["content-type"] = contentType;
         headers["x-amz-storage-class"] = storageClass.to!string;
         string[] signedHeaders = ["x-amz-storage-class"];
-        doUpload("PUT", bucket~"/"~resource, null, headers, signedHeaders, input, chunkSize);
+        auto resp = doUpload("PUT", bucket~"/"~resource, null, headers, signedHeaders, input, chunkSize);
+        checkForError(resp);
     }
 
     auto download(string bucket, string resource,
                   string[string] queryParameters = null, string[string] headers = null)
     {
-        return doRequest("GET", bucket~"/"~resource, queryParameters, headers);
+        auto resp = doRequest("GET", bucket~"/"~resource, queryParameters, headers);
+        checkForError(resp);
+        return resp;
     }
 
 /+

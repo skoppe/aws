@@ -117,9 +117,7 @@ abstract class RESTClient {
 
         req.addHeaders(signRequest2(resource, method, req.headers, queryParameters, null, creds, region, service));
 
-        auto resp = req.execute(method, url~"?"~queryString);
-        checkForError(resp);
-        return resp;
+        return req.execute(method, url~"?"~queryString);
     }
 
     Response doUpload(Range)(string method, string resource, string[string] queryParameters,
@@ -207,9 +205,7 @@ abstract class RESTClient {
 
         auto chunked = payload.chunkedContent(blockSize, extension);
 
-        auto resp = req.execute(method, url, chunked);
-        checkForError(resp);
-        return resp;
+        return req.execute(method, url, chunked);
     }
 
     Document readXML(Response response)
