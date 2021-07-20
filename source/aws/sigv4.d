@@ -16,7 +16,20 @@ struct CanonicalRequest
     string uri;
     string[string] queryParameters;
     string[string] headers;
-    const(ubyte)[] payload;
+    // const(ubyte)[] payload;
+    string payloadHash;
+}
+
+void setPayload(ref CanonicalRequest req, in ubyte[] payload) @safe {
+    auto payloadHash = payload.hash();
+    req.payloadHash = payloadHash;
+    req.headers["x-amz-content-sha256"] = payloadHash;
+}
+
+void setStreamingPayloadHash(ref CanonicalRequest req, string decodedLength) @safe {
+    req.headers["x-amz-content-sha256"] = streaming_payload_hash;
+    req.headers["x-amz-decoded-content-length"] = decodedLength;
+    req.payloadHash = streaming_payload_hash;
 }
 
 @trusted pure
@@ -76,27 +89,13 @@ private string requestStringBase(in CanonicalRequest r)
 string requestString(in CanonicalRequest r)
 {
     return r.requestStringBase ~ "\n" ~
-        r.payload.hash;
-}
-
-@safe pure
-string streamingRequestString(in CanonicalRequest r)
-{
-    return 
-        r.requestStringBase ~ "\n" ~
-        streaming_payload_hash;
+        r.payloadHash;
 }
 
 @safe pure
 string makeCRSigV4(in CanonicalRequest r)
 {
     return r.requestString.representation.hash;
-}
-
-@safe pure
-string makeStreamingSigV4(in CanonicalRequest r)
-{
-    return r.streamingRequestString.representation.hash;
 }
 
 unittest {
@@ -108,12 +107,12 @@ unittest {
             empty,
             ["content-type": "application/x-www-form-urlencoded; charset=utf-8",
              "host": "iam.amazonaws.com",
-             "x-amz-date": "20110909T233600Z"],
-            cast(ubyte[])"Action=ListUsers&Version=2010-05-08");
+             "x-amz-date": "20110909T233600Z"]);
+    r.setPayload(cast(ubyte[])"Action=ListUsers&Version=2010-05-08");
 
     auto sig = makeCRSigV4(r);
 
-    assert(sig == "3511de7e95d28ecd39e9513b642aee07e54f4941150d8df8bf94b328ef7e55e2");
+    assert(sig == "6bb0c1d1a458667c2717e3b2f7b14033f757a8e7230013d40b1e4d18b2378fe4");
 }
 
 struct SignableRequest
@@ -137,11 +136,6 @@ string signableString(in SignableRequest r) @safe {
         r.canonicalRequest.makeCRSigV4;
 }
 
-string signableStringForStream(in SignableRequest r) @safe {
-    return r.signableStringBase ~ "\n" ~
-        r.canonicalRequest.makeStreamingSigV4;
-}
-
 unittest {
     string[string] empty;
 
@@ -156,14 +150,14 @@ unittest {
             empty,
             ["content-type": "application/x-www-form-urlencoded; charset=utf-8",
              "host": "iam.amazonaws.com",
-             "x-amz-date": "20110909T233600Z"],
-            cast(ubyte[])"Action=ListUsers&Version=2010-05-08");
+             "x-amz-date": "20110909T233600Z"]);
+    r.canonicalRequest.setPayload(cast(ubyte[])"Action=ListUsers&Version=2010-05-08");
 
     auto sampleString =
         algorithm ~ "\n" ~
         "20110909T233600Z\n" ~
         "20110909/us-east-1/iam/aws4_request\n" ~ 
-        "3511de7e95d28ecd39e9513b642aee07e54f4941150d8df8bf94b328ef7e55e2";
+        "6bb0c1d1a458667c2717e3b2f7b14033f757a8e7230013d40b1e4d18b2378fe4";
 
     assert(sampleString == signableString(r));
 }
@@ -361,15 +355,14 @@ unittest {
                 "content-encoding":             "aws-chunked",
                 "content-length":               "66824",
                 "host":                         "s3.amazonaws.com",
-                "x-amz-content-sha256":         streaming_payload_hash,
                 "x-amz-date":                   isoDateTime,
-                "x-amz-decoded-content-length": "66560",
                 "x-amz-storage-class":          "REDUCED_REDUNDANCY",
             ],
             null
         );
+    canonicalRequest.setStreamingPayloadHash("66560");
 
-    auto canonicalRequestSignature = canonicalRequest.makeStreamingSigV4;
+    auto canonicalRequestSignature = canonicalRequest.makeCRSigV4;
     assert(canonicalRequestSignature == "cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455");
 
     /* Signable String:
@@ -380,7 +373,7 @@ unittest {
      */
 
     auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
-    auto signableString = signableRequest.signableStringForStream;
+    auto signableString = signableRequest.signableString;
     assert(signableString == "AWS4-HMAC-SHA256\n" ~
                              "20130524T000000Z\n" ~ 
                              "20130524/us-east-1/s3/aws4_request\n" ~

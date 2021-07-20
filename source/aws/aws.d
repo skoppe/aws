@@ -170,7 +170,7 @@ abstract class RESTClient {
 
         req.addHeaders(["content-length": bodySize.to!string,
                         // "content-encoding": "aws-chunked",
-                        "x-amz-content-sha256": "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+                        "x-amz-content-sha256": streaming_payload_hash,
                         "x-amz-decoded-content-length": payloadSize.to!string]);
 
         auto canonicalRequest = CanonicalRequest(
@@ -181,12 +181,10 @@ abstract class RESTClient {
                                                   "host":                         req.headers["host"],
                                                   // "content-encoding":             req.headers["content-encoding"],
                                                   "content-length":               req.headers["content-length"],
-                                                  "x-amz-content-sha256":         req.headers["x-amz-content-sha256"],
                                                   "x-amz-date":                   req.headers["x-amz-date"],
-                                                  "x-amz-decoded-content-length": req.headers["x-amz-decoded-content-length"],
-                                                  ],
-                                                 null
+                                                  ]
                                                  );
+        canonicalRequest.setStreamingPayloadHash(payloadSize.to!string);
 
         foreach (key; additionalSignedHeaders)
             canonicalRequest.headers[key] = req.headers[key];
@@ -194,7 +192,7 @@ abstract class RESTClient {
         //Calculate the seed signature
         auto signableRequest = SignableRequest(date, time, region, service, canonicalRequest);
         auto key = signingKey(creds.accessKeySecret, date, region, service);
-        auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableStringForStream);
+        auto binarySignature = key.sign(cast(ubyte[])signableRequest.signableString);
 
         auto credScope = date ~ "/" ~ region ~ "/" ~ service;
         auto authHeader = createSignatureHeader(creds.accessKeyID, credScope, canonicalRequest.headers, binarySignature);
@@ -265,12 +263,11 @@ private string[string] signRequest2(string uri, string method, string[string] he
     auto pos = uri.indexOf("?");
     if (pos < 0)
         pos = uri.length;
-    signRequest.canonicalRequest.uri = uri[0..pos];
 
+    signRequest.canonicalRequest.uri = uri[0..pos];
     signRequest.canonicalRequest.queryParameters = queryParameters;
 
-    string[string] newHeaders = ["x-amz-date": timeString,
-                                 "x-amz-content-sha256": sha256Of(requestBody).toHexString().toLower()];
+    string[string] newHeaders = ["x-amz-date": timeString];
     import std.algorithm : startsWith;
     import std.range : chain;
     foreach (x; chain(headers.byKeyValue, newHeaders.byKeyValue)) {
@@ -278,7 +275,8 @@ private string[string] signRequest2(string uri, string method, string[string] he
         if (lower == "host" || lower.startsWith("x-amz-"))
             signRequest.canonicalRequest.headers[lower] = x.value;
     }
-    signRequest.canonicalRequest.payload = requestBody;
+    signRequest.canonicalRequest.setPayload(requestBody);
+    newHeaders["x-amz-content-sha256"] = signRequest.canonicalRequest.payloadHash;
 
     ubyte[] signKey = signingKey(creds.accessKeySecret, dateString, region, service);
     ubyte[] stringToSign = cast(ubyte[])signableString(signRequest);
