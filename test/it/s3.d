@@ -4,6 +4,7 @@ import aws.credentials;
 
 
 unittest {
+    import unit_threaded;
     import std.array : appender;
     import std.stdio;
     import std.algorithm : joiner;
@@ -18,9 +19,10 @@ unittest {
     auto s3 = new S3(endpoint,region,creds);
 
     s3.createBucket("test-bucket");
-    s3.upload("test-bucket", "myfile", cast(ubyte[])[48,49,50,51,52,53]);
+    s3.upload("test-bucket", "myfile", cast(ubyte[])[48,49,50,51,52,53,54,55]);
     s3.download("test-bucket", "myfile").receiveAsRange.joiner().array().writeln();
 
+    s3.info("test-bucket", "myfile")["content-length"].should == "8";
     auto directories = appender!string;
     auto files = appender!string;
 

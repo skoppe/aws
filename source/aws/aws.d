@@ -66,7 +66,7 @@ abstract class RESTClient {
 
     private AWSCredentialSource m_credsSource;
 
-    this(string endpoint, string region, string service, AWSCredentialSource credsSource)
+    this(string endpoint, string region, string service, AWSCredentialSource credsSource) nothrow @safe
     {
         this.region = region;
         if (endpoint.startsWith("http://")) {
@@ -94,6 +94,9 @@ abstract class RESTClient {
             .text();
     }
 
+    Response doRequest(string method, string resource, string[string] queryParameters, string[string] headers) shared {
+        return (cast()this).doRequest(method, resource, queryParameters, headers);
+    }
     Response doRequest(string method, string resource, string[string] queryParameters, string[string] headers)
     {
         import requests : Request;
@@ -225,8 +228,8 @@ abstract class RESTClient {
             return; // No error
 
         auto document = readXML(response);
-        auto code = document.querySelector("Error Code").safeInnerText;
-        auto message = document.querySelector("Error Message").safeInnerText;
+        auto code = document.querySelector("error code").safeInnerText;
+        auto message = document.querySelector("error message").safeInnerText;
         throw makeException(code, response.code / 100 == 5, message, file, line, next);
     }
 
@@ -278,7 +281,7 @@ private string[string] signRequest2(string uri, string method, string[string] he
     signRequest.canonicalRequest.setPayload(requestBody);
     newHeaders["x-amz-content-sha256"] = signRequest.canonicalRequest.payloadHash;
 
-    ubyte[] signKey = signingKey(creds.accessKeySecret, dateString, region, service);
+    ubyte[32] signKey = signingKey(creds.accessKeySecret, dateString, region, service);
     ubyte[] stringToSign = cast(ubyte[])signableString(signRequest);
 
     auto signature = sign(signKey, stringToSign);

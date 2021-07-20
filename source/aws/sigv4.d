@@ -10,6 +10,16 @@ import std.string;
 immutable algorithm = "AWS4-HMAC-SHA256";
 immutable streaming_payload_hash = "STREAMING-" ~ algorithm ~ "-PAYLOAD";
 
+alias sign = hmac_sha256;
+
+string hmacSha256Sign(ubyte[32] key, in ubyte[] message) @safe pure {
+    return hmac_sha256(key, message).toHexString().toLower();
+}
+
+string hmacSha256Sign(ubyte[32] key, in string message) @trusted pure {
+    return hmacSha256Sign(key, cast(ubyte[])message);
+}
+
 struct CanonicalRequest
 {
     string method;
@@ -124,14 +134,14 @@ struct SignableRequest
     CanonicalRequest canonicalRequest;
 }
 
-private string signableStringBase(in SignableRequest r) @safe
+private string signableStringBase(in SignableRequest r) @safe pure
 {
     return algorithm ~ "\n" ~
         r.dateString ~ "T" ~ r.timeStringUTC ~ "Z\n" ~
         r.dateString ~ "/" ~ r.region ~ "/" ~ r.service ~ "/aws4_request";
 }
 
-string signableString(in SignableRequest r) @safe {
+string signableString(in SignableRequest r) @safe pure {
     return r.signableStringBase ~ "\n" ~
         r.canonicalRequest.makeCRSigV4;
 }
@@ -163,7 +173,7 @@ unittest {
 }
 
 @safe pure nothrow @nogc
-auto hmac_sha256(in ubyte[] key, in ubyte[] message)
+ubyte[32] hmac_sha256(in ubyte[] key, in ubyte[] message)
 in {
     assert(key.length <= 64);
 }
@@ -192,7 +202,7 @@ unittest {
     assert(mac == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
 }
 
-auto signingKey(string secret, string dateString, string region, string service)
+auto signingKey(in string secret, in string dateString, in string region, in string service) @trusted pure
 {
     ubyte[] kSecret = cast(ubyte[])("AWS4" ~ secret);
     auto kDate = hmac_sha256(kSecret, cast(ubyte[])dateString);
@@ -277,7 +287,7 @@ struct SignableChunk
 {
     static immutable string emptyHash;
 
-    static this()
+    shared static this()
     {
         emptyHash = hash([]);
     }

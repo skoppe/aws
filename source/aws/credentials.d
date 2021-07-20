@@ -40,12 +40,12 @@ class StaticAWSCredentials : AWSCredentialSource
 {
     AWSCredentials m_creds;
 
-    this(string accessKeyID, string accessKeySecret)
+    this(string accessKeyID, string accessKeySecret) @safe nothrow pure
     {
         m_creds = AWSCredentials(accessKeyID, accessKeySecret, "");
     }
 
-    AWSCredentials credentials(string credScope)
+    AWSCredentials credentials(string credScope) @safe nothrow
     {
         // FIXME: Different creds for different scopes?
         return m_creds;

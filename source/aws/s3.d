@@ -158,7 +158,7 @@ import arsd.dom;
 
 class S3 : RESTClient
 {
-    this(string endpoint, string region, AWSCredentialSource credsSource) {
+    this(string endpoint, string region, AWSCredentialSource credsSource) nothrow @safe {
         super(endpoint, region, "s3", credsSource);
     }
 
@@ -205,7 +205,7 @@ class S3 : RESTClient
         result.name = response.querySelector("listbucketresult name").safeInnerText;
         result.prefix = response.querySelector("listbucketresult prefix").safeInnerText;
         result.marker = response.querySelector("listbucketresult marker").safeInnerText;
-        result.maxKeys = response.querySelector("listbucketresult maxKeys").safeInnerText.to!uint;
+        result.maxKeys = response.querySelector("listbucketresult maxkeys").safeInnerText.to!uint;
         result.isTruncated = response.querySelector("listbucketresult istruncated").safeInnerText.toLower.to!bool;
 
         if (result.isTruncated)
