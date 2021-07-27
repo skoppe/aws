@@ -334,6 +334,11 @@ struct ChunkedContent(Range) if (is(ElementType!Range == ubyte) || is(ElementTyp
             pos = Position.end;
         else {
             range.popFront();
+            while (!range.empty) {
+                if (range.front.length != 0)
+                    break;
+                range.popFront();
+            }
             pos = range.empty ? Position.finalizer : Position.data;
         }
     }
