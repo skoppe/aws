@@ -31,6 +31,7 @@ jobs:
       - name: Start containers
         run: |
           docker-compose -f "docker-compose.yml" up -d --build
+          while ! curl http://localhost:4566/; do sleep 1; done
           sleep 5
 
       - name: Test
