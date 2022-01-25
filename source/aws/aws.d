@@ -202,11 +202,12 @@ abstract class RESTClient {
         req.addHeaders(["authorization": authHeader]);
 
         string signature = binarySignature.toHexString().toLower();
-        auto extension = (ubyte[] data) @safe
+        auto extension = (ubyte[] data) @trusted
             {
+                // has to be trusted because compiler things toLower escapes the stack allocated hex-string
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
                 signature = key.sign(chunk.signableString.representation).toHexString().toLower();
-                return ";chunk-signature=" ~ signature;
+                return text(";chunk-signature=", signature);
             };
 
         auto chunked = payload.chunkedContent(blockSize, extension);

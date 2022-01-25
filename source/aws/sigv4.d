@@ -12,7 +12,8 @@ immutable streaming_payload_hash = "STREAMING-" ~ algorithm ~ "-PAYLOAD";
 
 alias sign = hmac_sha256;
 
-string hmacSha256Sign(ubyte[32] key, in ubyte[] message) @safe pure {
+string hmacSha256Sign(ubyte[32] key, in ubyte[] message) @trusted pure {
+    // has to be trusted because compiler things toLower escapes the stack allocated hex-string
     return hmac_sha256(key, message).toHexString().toLower();
 }
 
