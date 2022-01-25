@@ -171,10 +171,14 @@ abstract class RESTClient {
         if ("content-type" !in headers)
             req.addHeaders(["content-type": "application/octet-stream"]);
 
-        req.addHeaders(["content-length": bodySize.to!string,
-                        // "content-encoding": "aws-chunked",
-                        "x-amz-content-sha256": streaming_payload_hash,
-                        "x-amz-decoded-content-length": payloadSize.to!string]);
+        if (payloadSize > 0)
+            req.addHeaders(["x-amz-decoded-content-length": payloadSize.to!string,
+                            "x-amz-content-sha256": streaming_payload_hash,
+                            "content-length": bodySize.to!string]);
+        else {
+            req.addHeaders(["x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+                            "content-length": "0"]);
+        }
 
         auto canonicalRequest = CanonicalRequest(
                                                  method.to!string,
