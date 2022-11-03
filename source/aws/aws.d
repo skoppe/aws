@@ -205,12 +205,12 @@ abstract class RESTClient {
         auto authHeader = createSignatureHeader(creds.accessKeyID, credScope, canonicalRequest.headers, binarySignature);
         req.addHeaders(["authorization": authHeader]);
 
-        string signature = binarySignature.toHexString().toLower();
+        string signature = binarySignature.toHexString!(LetterCase.lower)().idup;
         auto extension = (ubyte[] data) @trusted
             {
                 // has to be trusted because compiler things toLower escapes the stack allocated hex-string
                 auto chunk = SignableChunk(date, time, region, service, signature, hash(data));
-                signature = key.sign(chunk.signableString.representation).toHexString().toLower();
+                signature = key.sign(chunk.signableString.representation).toHexString!(LetterCase.lower)().idup;
                 return text(";chunk-signature=", signature);
             };
 

@@ -12,9 +12,8 @@ immutable streaming_payload_hash = "STREAMING-" ~ algorithm ~ "-PAYLOAD";
 
 alias sign = hmac_sha256;
 
-string hmacSha256Sign(ubyte[32] key, in ubyte[] message) @trusted pure {
-    // has to be trusted because compiler things toLower escapes the stack allocated hex-string
-    return hmac_sha256(key, message).toHexString().toLower();
+string hmacSha256Sign(ubyte[32] key, in ubyte[] message) @safe pure {
+    return hmac_sha256(key, message).toHexString!(LetterCase.lower)().idup;
 }
 
 string hmacSha256Sign(ubyte[32] key, in string message) @trusted pure {
@@ -195,27 +194,36 @@ body {
     return hash;
 }
 
-unittest {
-    ubyte[] key = cast(ubyte[])"key";
-    ubyte[] message = cast(ubyte[])"The quick brown fox jumps over the lazy dog";
+enum stringOrUbyte(T) = is(T == string) || is(T == ubyte[]) || is(T == ubyte[32]);
 
-    string mac = hmac_sha256(key, message).toHexString().toLower();
+@trusted pure nothrow @nogc
+ubyte[32] hmac_sha256(T,P)(in T key, in P message)
+     if (stringOrUbyte!T && stringOrUbyte!P)
+{
+    return hmac_sha256(cast(ubyte[])key, cast(ubyte[])message);
+}
+
+@safe unittest {
+    auto key = "key";
+    auto message = "The quick brown fox jumps over the lazy dog";
+
+    string mac = hmac_sha256(key, message).toHexString!(LetterCase.lower).idup;
     assert(mac == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
 }
 
-auto signingKey(in string secret, in string dateString, in string region, in string service) @trusted pure
+auto signingKey(in string secret, in string dateString, in string region, in string service) @safe pure
 {
-    ubyte[] kSecret = cast(ubyte[])("AWS4" ~ secret);
-    auto kDate = hmac_sha256(kSecret, cast(ubyte[])dateString);
-    auto kRegion = hmac_sha256(kDate, cast(ubyte[])region);
-    auto kService = hmac_sha256(kRegion, cast(ubyte[])service);
-    return hmac_sha256(kService, cast(ubyte[])"aws4_request");
+    auto kSecret = "AWS4" ~ secret;
+    auto kDate = hmac_sha256(kSecret, dateString);
+    auto kRegion = hmac_sha256(kDate, region);
+    auto kService = hmac_sha256(kRegion, service);
+    return hmac_sha256(kService, "aws4_request");
 }
 
 unittest {
     string secretKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
     auto signKey = signingKey(secretKey, "20110909", "us-east-1", "iam");
-    
+
     ubyte[] expected = [152, 241, 216, 137, 254, 196, 244, 66, 26, 220, 82, 43, 171, 12, 225, 248, 46, 105, 41, 194, 98, 237, 21, 229, 169, 76, 144, 239, 209, 227, 176, 231 ];
     assert(expected == signKey);
 }
@@ -235,7 +243,7 @@ unittest {
 
     string secretKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
     auto signKey = signingKey(secretKey, "20150830", "us-east-1", "iam");
-    auto signature = hmac_sha256(signKey, cast(ubyte[])sampleString).toHexString().toLower();
+    auto signature = hmac_sha256(signKey, cast(ubyte[])sampleString).toHexString!(LetterCase.lower)().idup;
     assert(signature == "5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7");
 }
 
@@ -251,7 +259,7 @@ unittest {
     auto secretKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
     auto signKey = signingKey(secretKey, "20110909", "us-east-1", "iam");
 
-    auto signature = sign(signKey, cast(ubyte[])sampleString).toHexString().toLower();
+    auto signature = sign(signKey, cast(ubyte[])sampleString).toHexString!(LetterCase.lower)().idup;
     auto expected = "ced6826de92d2bdeed8f846f0bf508e8559e98e4b0199114b84c54174deb456c";
 
     assert(signature == expected);
@@ -392,7 +400,7 @@ unittest {
 
     auto key = signingKey(AWSSecretAccessKey, date, region, service);
     auto binarySignature = key.sign(cast(ubyte[])signableString);
-    auto seedSignature = binarySignature.toHexString().toLower();
+    auto seedSignature = binarySignature.toHexString!(LetterCase.lower).idup;
     assert(seedSignature == "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9");
 
     auto credScope = date ~ "/" ~ region ~ "/" ~ service;
@@ -405,13 +413,13 @@ unittest {
     payload1[] = 97;
     auto chunk1 = SignableChunk(date,time,region,service,seedSignature,hash(payload1));
     auto signableChunkString1 = chunk1.signableString;
-    assert(signableChunkString1 == "AWS4-HMAC-SHA256-PAYLOAD\n" ~ 
-                                   "20130524T000000Z\n" ~ 
-                                   "20130524/us-east-1/s3/aws4_request\n" ~ 
-                                   "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9\n" ~ 
-                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~ 
+    assert(signableChunkString1 == "AWS4-HMAC-SHA256-PAYLOAD\n" ~
+                                   "20130524T000000Z\n" ~
+                                   "20130524/us-east-1/s3/aws4_request\n" ~
+                                   "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9\n" ~
+                                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~
                                    "bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a");
-    auto chunkSignature1 = key.sign(cast(ubyte[])signableChunkString1).toHexString().toLower();
+    auto chunkSignature1 = key.sign(cast(ubyte[])signableChunkString1).toHexString!(LetterCase.lower)().idup;
     assert(chunkSignature1 == "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648");
 
     auto payload2 = new ubyte[](0x400);
@@ -424,7 +432,7 @@ unittest {
                                    "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648\n" ~
                                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~
                                    "2edc986847e209b4016e141a6dc8716d3207350f416969382d431539bf292e4a");
-    auto chunkSignature2 = key.sign(cast(ubyte[])signableChunkString2).toHexString().toLower();
+    auto chunkSignature2 = key.sign(cast(ubyte[])signableChunkString2).toHexString!(LetterCase.lower)().idup;
     assert(chunkSignature2 == "0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497");
 
     auto payload3 = new ubyte[](0);
@@ -436,6 +444,6 @@ unittest {
                                    "0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497\n" ~
                                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n" ~
                                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    auto chunkSignature3 = key.sign(cast(ubyte[])signableChunkString3).toHexString().toLower();
+    auto chunkSignature3 = key.sign(cast(ubyte[])signableChunkString3).toHexString!(LetterCase.lower)().idup;
     assert(chunkSignature3 == "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
 }
